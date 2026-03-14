@@ -1,0 +1,179 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Head Coach 26 — Premium dark sports broadcast theme */
+:root {
+  /* Game-specific tokens */
+  --bg-primary: #0a0e14;
+  --bg-surface: #111820;
+  --bg-elevated: #1a2230;
+  --bg-glass: rgba(17, 24, 32, 0.85);
+  --text-primary: #F0F6FC;
+  --text-secondary: #8B949E;
+  --text-muted: #484F58;
+  --accent-red: #E3342F;
+  --accent-gold: #D4A017;
+  --accent-blue: #2188FF;
+  --team-primary: #2188FF;
+  --team-secondary: #FFFFFF;
+
+  /* Broadcast-style surface accents */
+  --surface-glow: rgba(33, 136, 255, 0.06);
+  --border-subtle: rgba(48, 54, 61, 0.6);
+
+  /* shadcn/ui tokens — mapped to our dark theme */
+  --background: #0a0e14;
+  --foreground: #F0F6FC;
+  --card: #111820;
+  --card-foreground: #F0F6FC;
+  --popover: #1a2230;
+  --popover-foreground: #F0F6FC;
+  --primary: #2188FF;
+  --primary-foreground: #FFFFFF;
+  --secondary: #1a2230;
+  --secondary-foreground: #F0F6FC;
+  --muted: #111820;
+  --muted-foreground: #8B949E;
+  --accent: #1a2230;
+  --accent-foreground: #F0F6FC;
+  --destructive: #E3342F;
+  --destructive-foreground: #FFFFFF;
+  --border: #1e2a3a;
+  --input: #1e2a3a;
+  --ring: #2188FF;
+  --radius: 0.5rem;
+
+  --sidebar: #0d1218;
+  --sidebar-foreground: #F0F6FC;
+  --sidebar-primary: #2188FF;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1a2230;
+  --sidebar-accent-foreground: #F0F6FC;
+  --sidebar-border: #1e2a3a;
+  --sidebar-ring: #2188FF;
+
+  --chart-1: #2188FF;
+  --chart-2: #D4A017;
+  --chart-3: #E3342F;
+  --chart-4: #58A6FF;
+  --chart-5: #8B949E;
+}
+
+@theme inline {
+  --font-sans: 'Inter', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    @apply bg-background text-foreground;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  html {
+    @apply font-sans;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom scrollbar for the broadcast feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+}
+
+/* Display heading font (Oswald) */
+@utility font-display {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+}
+
+/* Monospaced stat numbers */
+@utility font-stat {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* ESPN-style lower-third accent bar */
+@utility accent-bar-left {
+  position: relative;
+}
+
+/* Broadcast glass panel */
+@utility glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Score display — large broadcast numbers */
+@utility score-display {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
