@@ -2,9 +2,21 @@
 /config/database.php
 /config/api_keys.php
 
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.token
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
 # Runtime data
-/storage/leagues/
-/storage/uploads/
+/storage/
+/uploads/
 *.db
 *.sqlite
 
@@ -22,10 +34,18 @@
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # Logs
 *.log
+npm-debug.log*
+
+# Serena
+.serena/
