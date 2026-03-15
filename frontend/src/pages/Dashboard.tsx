@@ -138,21 +138,21 @@ function CoachAgenda() {
       );
     }
   } else if (phase === 'offseason') {
-    message = "Offseason — Draft and sign free agents.";
+    message = "Offseason — Manage your roster and prepare for next season.";
     actions = (
       <>
-        <Link to="/draft" className={btnPrimary}>
-          <GraduationCap className="h-4 w-4" />
-          Draft
+        <Link to="/offseason" className={btnPrimary}>
+          <ClipboardList className="h-4 w-4" />
+          Offseason Hub
         </Link>
         <Link to="/free-agency" className={btnSecondary}>
           <UserPlus className="h-4 w-4" />
           Free Agency
         </Link>
-        <button onClick={handleAdvance} disabled={advance.isPending} className={btnSecondary}>
-          <FastForward className="h-4 w-4" />
-          {advance.isPending ? 'Starting...' : 'New Season'}
-        </button>
+        <Link to="/draft" className={btnSecondary}>
+          <GraduationCap className="h-4 w-4" />
+          Draft
+        </Link>
       </>
     );
   }
@@ -430,9 +430,9 @@ function WhatsNext({ phase, week, nextGame, myTeamId }: { phase: string; week: n
     );
   } else if (phase === 'offseason') {
     items.push(
+      { icon: ClipboardList, label: 'Offseason Hub', sub: 'Your offseason command center', to: '/offseason', accent: 'var(--accent-gold)' },
       { icon: UserPlus, label: 'Free Agency', sub: 'Browse available players and bid', to: '/free-agency', accent: 'var(--accent-blue)' },
       { icon: GraduationCap, label: 'Draft Room', sub: 'Scout prospects for the future', to: '/draft', accent: '#8b5cf6' },
-      { icon: ClipboardList, label: 'Contract Planner', sub: 'Manage expiring deals', to: '/contract-planner' },
     );
   } else if (phase === 'regular' || phase === 'playoffs') {
     // Bye week or all games done
@@ -654,7 +654,16 @@ export default function Dashboard() {
                     </span>
                     <div className="h-[2px] w-6 bg-[var(--accent-gold)] rounded-full" />
                   </div>
-                  <div className="grid grid-cols-2 gap-[1px] bg-black/30">
+                  <div className="grid grid-cols-3 gap-[1px] bg-black/30">
+                    <Link to="/offseason" className="block bg-black/50 hover:bg-black/40 transition-colors px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <ClipboardList className="h-5 w-5 text-white/60 shrink-0" />
+                        <div>
+                          <p className="font-display text-sm font-bold uppercase text-white tracking-tight">Offseason Hub</p>
+                          <p className="text-xs text-white/40 mt-0.5">Command center</p>
+                        </div>
+                      </div>
+                    </Link>
                     <Link to="/free-agency" className="block bg-black/50 hover:bg-black/40 transition-colors px-5 py-4">
                       <div className="flex items-center gap-3">
                         <UserPlus className="h-5 w-5 text-white/60 shrink-0" />

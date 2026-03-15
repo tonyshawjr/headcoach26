@@ -331,24 +331,26 @@ class OffseasonController
         $stmt->execute([$leagueId]);
         $league = $stmt->fetch();
 
-        $allPhases = [
-            'awards', 're_sign', 'combine',
-            'free_agency_1', 'free_agency_2', 'free_agency_3', 'free_agency_4',
-            'draft', 'roster_cuts', 'development', 'new_season',
-        ];
+        $allPhasesMeta = $this->flowEngine->getAllPhasesMeta();
+        $allPhases = array_column($allPhasesMeta, 'id');
         $currentIndex = $phase ? array_search($phase, $allPhases) : -1;
+        $phaseMeta = $this->flowEngine->getPhaseMeta($phase);
 
         $phaseSummary = match ($phase) {
             'awards'        => 'Season awards are being presented.',
+            'franchise_tag' => 'Teams are applying franchise tags to key players.',
             're_sign'       => 'Teams are re-signing their own players. Review your expiring contracts.',
-            'combine'       => 'The combine is underway. Prospect grades are being revealed.',
-            'free_agency_1' => 'Free agency round 1: Star players (78+ OVR) are on the market.',
-            'free_agency_2' => 'Free agency round 2: Quality starters (70+ OVR) are available.',
-            'free_agency_3' => 'Free agency round 3: Solid contributors (60+ OVR) are looking for teams.',
-            'free_agency_4' => 'Free agency round 4: All remaining free agents are available.',
+            'combine'       => 'The combine is underway. Prospect grades are being revealed. Scouting is open.',
+            'free_agency_1' => 'Free agency wave 1: Star players (78+ OVR) are on the market.',
+            'free_agency_2' => 'Free agency wave 2: Quality starters (70+ OVR) are available.',
+            'free_agency_3' => 'Free agency wave 3: Solid contributors (60+ OVR) are looking for teams.',
+            'free_agency_4' => 'Free agency wave 4: All remaining free agents are available.',
+            'pre_draft'     => 'Final scouting week before the draft. Trade your picks now!',
             'draft'         => 'The draft is underway. Make your picks!',
+            'udfa'          => 'Undrafted free agents are available. Sign them before roster cuts!',
             'roster_cuts'   => 'Teams are trimming rosters to 53 players.',
             'development'   => 'Players are progressing and regressing based on age and potential.',
+            'hall_of_fame'  => 'Hall of Fame inductees are being selected.',
             'new_season'    => 'A new season is being prepared with schedule and fresh free agents.',
             default         => 'Offseason has not started yet.',
         };
@@ -374,8 +376,12 @@ class OffseasonController
             'season_year' => (int) ($league['season_year'] ?? 0),
             'phase_index' => $currentIndex !== false ? $currentIndex : -1,
             'total_phases' => count($allPhases),
+            'week_number' => $phaseMeta['week'],
+            'week_label' => $phaseMeta['label'],
+            'week_short' => $phaseMeta['short'],
+            'total_weeks' => 13,
             'summary' => $phaseSummary,
-            'phases' => $allPhases,
+            'phases' => $allPhasesMeta,
             'pending_actions' => $pendingActions,
         ]);
     }

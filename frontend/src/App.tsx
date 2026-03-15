@@ -31,6 +31,7 @@ import Legacy from '@/pages/Legacy';
 import Glossary from '@/pages/Glossary';
 import FranchiseSetup from '@/pages/FranchiseSetup';
 import OffseasonReport from '@/pages/OffseasonReport';
+import OffseasonHub from '@/pages/OffseasonHub';
 import SalaryCap from '@/pages/SalaryCap';
 import TeamRoster from '@/pages/TeamRoster';
 import Teams from '@/pages/Teams';
@@ -189,6 +190,7 @@ export default function App() {
               <Route path="/team/:id" element={<TeamRoster />} />
               <Route path="/glossary" element={<Glossary />} />
               <Route path="/franchise-setup" element={<FranchiseSetup />} />
+              <Route path="/offseason" element={<OffseasonHub />} />
               <Route path="/offseason-report" element={<OffseasonReport />} />
               <Route path="/article/:id" element={<ArticlePage />} />
               {/* Phase 6: Advanced Stats & History Pages */}

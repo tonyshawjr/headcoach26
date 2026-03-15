@@ -872,10 +872,24 @@ export function useCareerHistory() {
   });
 }
 
-// --- Offseason Report ---
+// --- Offseason ---
 export function useOffseasonReport() {
   return useQuery({
     queryKey: ['offseason-report'],
     queryFn: () => offseasonApi.report(),
+  });
+}
+
+export function useOffseasonStatus() {
+  return useQuery({
+    queryKey: ['offseason-status'],
+    queryFn: () => offseasonApi.status(),
+  });
+}
+
+export function useExpiringContracts() {
+  return useQuery({
+    queryKey: ['expiring-contracts'],
+    queryFn: () => offseasonApi.expiringContracts(),
   });
 }

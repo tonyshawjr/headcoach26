@@ -63,8 +63,8 @@ function useNavLabels() {
       advTooltip = 'Advance to the next round of the playoffs';
     }
   } else if (phase === 'offseason') {
-    advLabel = 'Begin New Season';
-    advTooltip = 'Start a new season from the preseason';
+    advLabel = 'Advance Week';
+    advTooltip = 'Advance to the next offseason week';
   }
 
   return { simLabel, simDisabled, simTooltip, advLabel, advTooltip, weekSimmed };

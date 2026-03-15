@@ -39,6 +39,7 @@ const navItems: NavEntry[] = [
   {
     label: 'Front Office',
     children: [
+      { label: 'Offseason Hub', to: '/offseason' },
       { label: 'Trades', to: '/trades' },
       { label: 'Free Agency', to: '/free-agency' },
       { label: 'Draft Room', to: '/draft' },

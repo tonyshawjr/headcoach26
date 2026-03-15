@@ -65,6 +65,7 @@ const navMenus: NavMenu[] = [
     id: 'front-office',
     label: 'Front Office',
     items: [
+      { label: 'Offseason Hub', to: '/offseason' },
       { label: 'Trades', to: '/trades' },
       { label: 'Free Agency', to: '/free-agency' },
       { label: 'Draft Room', to: '/draft' },
@@ -145,8 +146,8 @@ function useNavLabels() {
     advLabel = week >= 22 ? 'Enter Offseason' : nextLabel;
     advTooltip = week >= 22 ? 'Enter the offseason' : `Advance to ${nextLabel}`;
   } else if (phase === 'offseason') {
-    advLabel = 'New Season';
-    advTooltip = 'Start a new season';
+    advLabel = 'Advance Week';
+    advTooltip = 'Advance to the next offseason week';
   }
 
   return { simLabel, simDisabled, simTooltip, advLabel, advTooltip, weekSimmed };
@@ -306,20 +307,6 @@ export function TopNav() {
 
           {/* Desktop nav menus */}
           <div className="hidden items-center md:flex">
-            {/* The Hub — top-level link */}
-            <NavLink
-              to="/league-hub"
-              className={({ isActive }) =>
-                `px-3 py-3.5 text-[13px] font-semibold tracking-wide transition-colors ${
-                  isActive
-                    ? 'text-white border-b-2 border-[#2188FF]'
-                    : 'text-[#999] hover:text-white'
-                }`
-              }
-            >
-              The Hub
-            </NavLink>
-
             {navMenus.map((menu) => {
               const visibleItems = filterItems(menu.items);
               if (visibleItems.length === 0) return null;
@@ -410,6 +397,20 @@ export function TopNav() {
                 </div>
               );
             })}
+
+            {/* The Hub — top-level link, after dropdowns */}
+            <NavLink
+              to="/league-hub"
+              className={({ isActive }) =>
+                `px-3 py-3.5 text-[13px] font-semibold tracking-wide transition-colors ${
+                  isActive
+                    ? 'text-white border-b-2 border-[#2188FF]'
+                    : 'text-[#999] hover:text-white'
+                }`
+              }
+            >
+              The Hub
+            </NavLink>
           </div>
         </div>
 
@@ -434,7 +435,7 @@ export function TopNav() {
             if (phase === 'offseason') {
               return (
                 <button onClick={handleAdvance} disabled={advance.isPending} className={btnClass}>
-                  {advance.isPending ? 'Starting...' : 'New Season'}
+                  {advance.isPending ? 'Advancing...' : 'Advance Week'}
                 </button>
               );
             }
@@ -639,7 +640,7 @@ export function TopNav() {
                     return <button onClick={handleAdvance} disabled={advance.isPending} className={cls}>{advance.isPending ? 'Starting...' : 'Start Season'}</button>;
                   }
                   if (phase === 'offseason') {
-                    return <button onClick={handleAdvance} disabled={advance.isPending} className={cls}>{advance.isPending ? 'Starting...' : 'New Season'}</button>;
+                    return <button onClick={handleAdvance} disabled={advance.isPending} className={cls}>{advance.isPending ? 'Advancing...' : 'Advance Week'}</button>;
                   }
                   if (weekSimmed || justSimmed) {
                     return <button onClick={handleAdvance} disabled={advance.isPending} className={cls}>{advance.isPending ? 'Advancing...' : `Advance to ${weekLabelFn(week + 1, week >= 18 ? 'playoffs' : 'regular')}`}</button>;

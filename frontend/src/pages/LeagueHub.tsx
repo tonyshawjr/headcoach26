@@ -20,11 +20,12 @@ import {
   EmptyBlock,
 } from '@/components/ui/sports-ui';
 
-type TabValue = 'news' | 'recaps' | 'features' | 'columns' | 'morning_blitz' | 'social' | 'rankings';
+type TabValue = 'news' | 'recaps' | 'scouting' | 'features' | 'columns' | 'morning_blitz' | 'social' | 'rankings';
 
 const tabs: { key: TabValue; label: string }[] = [
   { key: 'news', label: 'All News' },
   { key: 'recaps', label: 'Recaps' },
+  { key: 'scouting', label: 'Scouting Report' },
   { key: 'features', label: 'Features' },
   { key: 'columns', label: 'Columns' },
   { key: 'morning_blitz', label: 'Morning Blitz' },
@@ -47,10 +48,12 @@ export default function LeagueHub() {
   const [featurePage, setFeaturePage] = useState(1);
   const [columnPage, setColumnPage] = useState(1);
   const [blitzPage, setBlitzPage] = useState(1);
+  const [scoutPage, setScoutPage] = useState(1);
 
   // API calls — use server-side type/week filtering
   const { data: allNewsResp, isLoading: newsLoading, isError: newsError } = useArticles(league?.id, { page: newsPage });
   const { data: recapsResp, isLoading: recapsLoading } = useArticles(league?.id, { type: 'game_recap', week: recapWeek, page: 1 });
+  const { data: scoutResp, isLoading: scoutLoading } = useArticles(league?.id, { type: 'draft_coverage', page: scoutPage });
   const { data: featuresResp, isLoading: featuresLoading } = useArticles(league?.id, { type: 'feature', page: featurePage });
   const { data: columnsResp, isLoading: columnsLoading } = useArticles(league?.id, { type: 'column', page: columnPage });
   const { data: blitzResp, isLoading: blitzLoading } = useArticles(league?.id, { type: 'morning_blitz', page: blitzPage });
@@ -59,6 +62,7 @@ export default function LeagueHub() {
 
   const allNews = allNewsResp?.articles ?? [];
   const recaps = recapsResp?.articles ?? [];
+  const scoutArticles = scoutResp?.articles ?? [];
   const features = featuresResp?.articles ?? [];
   const columns = columnsResp?.articles ?? [];
   const blitz = blitzResp?.articles ?? [];
@@ -199,6 +203,29 @@ export default function LeagueHub() {
               <div className="space-y-3">
                 {recaps.map((a) => <ArticleCard key={a.id} article={a} />)}
               </div>
+            )}
+          </Section>
+        )}
+
+        {/* ═══ Scouting Report ═══ */}
+        {activeTab === 'scouting' && (
+          <Section title="Scouting Report" delay={0.05}>
+            {scoutLoading ? (
+              <LoadingSkeleton />
+            ) : scoutArticles.length === 0 ? (
+              <EmptyBlock icon={Newspaper} title="No scouting reports yet" description="Jake Morrison and Nina Charles will start filing draft coverage once the offseason begins and a new draft class is generated." />
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {scoutArticles.map((a) => <ArticleCard key={a.id} article={a} />)}
+                </div>
+                <Pagination
+                  page={scoutPage}
+                  totalPages={scoutResp?.pages ?? 1}
+                  onPrev={() => setScoutPage((p) => p - 1)}
+                  onNext={() => setScoutPage((p) => p + 1)}
+                />
+              </>
             )}
           </Section>
         )}

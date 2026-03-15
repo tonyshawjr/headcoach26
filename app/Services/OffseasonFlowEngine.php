@@ -8,9 +8,10 @@ use App\Database\Connection;
  * OffseasonFlowEngine -- Master orchestrator for the phased offseason.
  *
  * Phases (in order):
- *   awards -> re_sign -> combine -> free_agency_1 -> free_agency_2
- *   -> free_agency_3 -> free_agency_4 -> draft -> roster_cuts
- *   -> development -> hall_of_fame -> new_season
+ *   awards -> franchise_tag -> re_sign -> combine -> free_agency_1
+ *   -> free_agency_2 -> free_agency_3 -> free_agency_4 -> pre_draft
+ *   -> draft -> udfa -> roster_cuts -> development -> hall_of_fame
+ *   -> new_season
  */
 class OffseasonFlowEngine
 {
@@ -25,11 +26,32 @@ class OffseasonFlowEngine
         'free_agency_2',
         'free_agency_3',
         'free_agency_4',
+        'pre_draft',
         'draft',
+        'udfa',
         'roster_cuts',
         'development',
         'hall_of_fame',
         'new_season',
+    ];
+
+    /** Human-readable week labels for each phase */
+    private const PHASE_META = [
+        'awards'         => ['week' => 1,  'label' => 'Awards & Franchise Tags', 'short' => 'Awards'],
+        'franchise_tag'  => ['week' => 1,  'label' => 'Awards & Franchise Tags', 'short' => 'Tags'],
+        're_sign'        => ['week' => 2,  'label' => 'Re-Sign Window',          'short' => 'Re-Sign'],
+        'combine'        => ['week' => 3,  'label' => 'Combine & Scouting',      'short' => 'Combine'],
+        'free_agency_1'  => ['week' => 4,  'label' => 'Free Agency: Big Names',  'short' => 'FA Wave 1'],
+        'free_agency_2'  => ['week' => 5,  'label' => 'Free Agency: Starters',   'short' => 'FA Wave 2'],
+        'free_agency_3'  => ['week' => 6,  'label' => 'Free Agency: Depth',      'short' => 'FA Wave 3'],
+        'free_agency_4'  => ['week' => 7,  'label' => 'Free Agency: Remaining',  'short' => 'FA Wave 4'],
+        'pre_draft'      => ['week' => 8,  'label' => 'Pre-Draft Week',          'short' => 'Pre-Draft'],
+        'draft'          => ['week' => 9,  'label' => 'The Draft',               'short' => 'Draft'],
+        'udfa'           => ['week' => 10, 'label' => 'Undrafted Free Agents',   'short' => 'UDFAs'],
+        'roster_cuts'    => ['week' => 11, 'label' => 'Roster Cuts',             'short' => 'Cuts'],
+        'development'    => ['week' => 12, 'label' => 'Development & Hall of Fame', 'short' => 'Dev'],
+        'hall_of_fame'   => ['week' => 12, 'label' => 'Development & Hall of Fame', 'short' => 'HOF'],
+        'new_season'     => ['week' => 13, 'label' => 'New Season',              'short' => 'New Season'],
     ];
 
     /** OVR thresholds per FA round (stars sign first) */
@@ -144,7 +166,9 @@ class OffseasonFlowEngine
             'free_agency_2'  => $this->processFreeAgencyRound($leagueId, 2),
             'free_agency_3'  => $this->processFreeAgencyRound($leagueId, 3),
             'free_agency_4'  => $this->processFreeAgencyRound($leagueId, 4),
+            'pre_draft'      => $this->processPreDraft($leagueId),
             'draft'          => $this->processDraftAI($leagueId),
+            'udfa'           => $this->processUDFAWindow($leagueId),
             'roster_cuts'    => $this->processRosterCuts($leagueId),
             'development'    => $this->processDevelopment($leagueId),
             'hall_of_fame'   => $this->processHallOfFame($leagueId),
@@ -2173,5 +2197,152 @@ class OffseasonFlowEngine
             'position' => $player['position'],
             'released_to_fa' => true,
         ];
+    }
+
+    // ================================================================
+    //  PHASE: Pre-Draft
+    // ================================================================
+
+    private function processPreDraft(int $leagueId): array
+    {
+        $league = $this->getLeague($leagueId);
+        $seasonYear = (int) ($league['season_year'] ?? 2026);
+
+        // Generate pre-draft coverage articles
+        $articles = [];
+        try {
+            $draftEngine = new DraftEngine();
+            $classId = $draftEngine->getCurrentClassId($leagueId);
+            if ($classId) {
+                $seasonStmt = $this->db->prepare(
+                    "SELECT id FROM seasons WHERE league_id = ? AND is_current = 1 LIMIT 1"
+                );
+                $seasonStmt->execute([$leagueId]);
+                $seasonRow = $seasonStmt->fetch();
+                $seasonId = $seasonRow ? (int) $seasonRow['id'] : 0;
+
+                if (class_exists('App\\Services\\DraftScoutEngine')) {
+                    $scoutEngine = new DraftScoutEngine();
+                    $articles = $scoutEngine->generatePreDraftCoverage($leagueId, $seasonId, $classId);
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log("Pre-draft coverage error: " . $e->getMessage());
+        }
+
+        // Final stock adjustments — a few prospects rise/fall
+        $stockChanges = $this->preDraftStockAdjustments($leagueId);
+
+        return [
+            'articles_generated' => is_array($articles) ? count($articles) : 0,
+            'stock_changes' => $stockChanges,
+            'message' => 'Pre-draft week: final scouting before the draft. Trade your picks now!',
+        ];
+    }
+
+    /**
+     * Minor stock adjustments for the pre-draft week — mock draft buzz
+     */
+    private function preDraftStockAdjustments(int $leagueId): array
+    {
+        $draftEngine = new DraftEngine();
+        $classId = $draftEngine->getCurrentClassId($leagueId);
+        if (!$classId) return [];
+
+        $stmt = $this->db->prepare(
+            "SELECT id, stock_rating, stock_trend FROM draft_prospects
+             WHERE draft_class_id = ? AND is_drafted = 0
+             ORDER BY RANDOM() LIMIT 10"
+        );
+        $stmt->execute([$classId]);
+        $prospects = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $changes = [];
+        foreach ($prospects as $p) {
+            $delta = mt_rand(-5, 5);
+            if ($delta === 0) continue;
+
+            $newStock = max(10, min(100, (int) ($p['stock_rating'] ?? 50) + $delta));
+            $newTrend = $delta > 2 ? 'rising' : ($delta < -2 ? 'falling' : 'steady');
+
+            $this->db->prepare(
+                "UPDATE draft_prospects SET stock_rating = ?, stock_trend = ? WHERE id = ?"
+            )->execute([$newStock, $newTrend, $p['id']]);
+
+            $changes[] = ['prospect_id' => (int) $p['id'], 'delta' => $delta, 'trend' => $newTrend];
+        }
+
+        return $changes;
+    }
+
+    // ================================================================
+    //  PHASE: UDFA Window
+    // ================================================================
+
+    private function processUDFAWindow(int $leagueId): array
+    {
+        // The UDFAs were already created during processDraftAI.
+        // This phase exists so the human player has a dedicated window
+        // to browse and sign UDFAs before AI teams grab them in roster_cuts.
+
+        // Count available UDFAs
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM free_agents fa
+             JOIN players p ON fa.player_id = p.id
+             WHERE fa.league_id = ? AND fa.status = 'available' AND p.is_rookie = 1 AND p.team_id IS NULL"
+        );
+        $stmt->execute([$leagueId]);
+        $udfaCount = (int) $stmt->fetchColumn();
+
+        // Get top available UDFAs for the summary
+        $stmt = $this->db->prepare(
+            "SELECT p.first_name, p.last_name, p.position, p.overall_rating, p.college
+             FROM free_agents fa
+             JOIN players p ON fa.player_id = p.id
+             WHERE fa.league_id = ? AND fa.status = 'available' AND p.is_rookie = 1 AND p.team_id IS NULL
+             ORDER BY p.overall_rating DESC
+             LIMIT 10"
+        );
+        $stmt->execute([$leagueId]);
+        $topUDFAs = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $topUDFAList = array_map(fn($p) => [
+            'name' => $p['first_name'] . ' ' . $p['last_name'],
+            'position' => $p['position'],
+            'overall' => (int) $p['overall_rating'],
+            'college' => $p['college'],
+        ], $topUDFAs);
+
+        return [
+            'udfa_available' => $udfaCount,
+            'top_udfas' => $topUDFAList,
+            'message' => $udfaCount > 0
+                ? "{$udfaCount} undrafted free agents are available. Sign them before roster cuts!"
+                : 'No undrafted free agents available.',
+        ];
+    }
+
+    /**
+     * Get metadata for a phase (week number, label, short label).
+     */
+    public function getPhaseMeta(?string $phase): array
+    {
+        if (!$phase || !isset(self::PHASE_META[$phase])) {
+            return ['week' => 0, 'label' => 'Offseason', 'short' => 'Offseason'];
+        }
+        return self::PHASE_META[$phase];
+    }
+
+    /**
+     * Get all phases with their metadata for the frontend timeline.
+     */
+    public function getAllPhasesMeta(): array
+    {
+        $result = [];
+        foreach (self::PHASES as $phase) {
+            $meta = self::PHASE_META[$phase] ?? ['week' => 0, 'label' => $phase, 'short' => $phase];
+            $result[] = array_merge($meta, ['id' => $phase]);
+        }
+        return $result;
     }
 }

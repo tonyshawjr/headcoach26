@@ -422,84 +422,154 @@ class DraftScoutEngine
         $mockVersion = ((int) $stmt->fetchColumn()) + 1;
         $versionLabel = $mockVersion === 1 ? '1.0' : (string) number_format($mockVersion * 1.0, 1);
 
-        // Get teams by draft order (worst record first)
+        // Get ALL teams by draft order (worst record first, point diff as tiebreaker)
         $stmt = $this->db->prepare(
-            "SELECT id, city, name, abbreviation FROM teams
-             WHERE league_id = ?
-             ORDER BY wins ASC, (points_for - points_against) ASC
-             LIMIT 15"
+            "SELECT id, city, name, abbreviation, wins, losses, overall_rating
+             FROM teams WHERE league_id = ?
+             ORDER BY wins ASC, (points_for - points_against) ASC"
         );
         $stmt->execute([$leagueId]);
-        $teams = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $allTeams = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
-        // Get top available prospects
+        // Get ALL available prospects ranked by overall/stock
         $stmt = $this->db->prepare(
             "SELECT * FROM draft_prospects
              WHERE draft_class_id = ? AND is_drafted = 0
-             ORDER BY COALESCE(stock_rating, 50) DESC, actual_overall DESC
-             LIMIT 20"
+             ORDER BY actual_overall DESC, COALESCE(combine_score, 50) DESC"
         );
         $stmt->execute([$draftClassId]);
-        $prospects = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $allProspects = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
-        if (empty($teams) || empty($prospects)) {
-            return;
-        }
+        if (empty($allTeams) || empty($allProspects)) return;
 
-        // Check if this is an updated mock with progressive references
-        $previousMockBody = '';
-        if ($mockVersion > 1) {
-            $stmt = $this->db->prepare(
-                "SELECT body FROM articles WHERE league_id = ? AND author_name = ? AND headline LIKE '%Mock Draft%'
-                 ORDER BY published_at DESC LIMIT 1"
+        // Build comprehensive team needs with context
+        $teamNeeds = [];
+        $teamBestByPos = [];
+        foreach ($allTeams as $t) {
+            $tid = (int) $t['id'];
+            $teamNeeds[$tid] = $this->getTeamNeeds($tid);
+
+            // Also get the best player at each position (to avoid drafting what they already have)
+            $stmt2 = $this->db->prepare(
+                "SELECT position, MAX(overall_rating) as best_ovr
+                 FROM players WHERE team_id = ? AND status = 'active'
+                 GROUP BY position"
             );
-            $stmt->execute([$leagueId, $scout['name']]);
-            $previousMockBody = $stmt->fetchColumn() ?: '';
+            $stmt2->execute([$tid]);
+            $teamBestByPos[$tid] = [];
+            foreach ($stmt2->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+                $teamBestByPos[$tid][$r['position']] = (int) $r['best_ovr'];
+            }
         }
 
-        $body = $mockVersion === 1
-            ? "It's that time of year. The combine is approaching, pro days are on the calendar, and front offices are burning midnight oil. Here's my first attempt at projecting the top picks.\n\n"
-            : "The board continues to shift. Since my last mock, several prospects have moved — some up, some down. Here's my updated projection.\n\n";
-
+        // Mock the full first round (32 picks)
         $usedProspects = [];
-        $pickCount = min(count($teams), count($prospects));
+        $picks = [];
+        $pickCount = min(32, count($allTeams), count($allProspects));
 
         for ($i = 0; $i < $pickCount; $i++) {
-            $team = $teams[$i];
-            $needs = $this->getTeamNeeds((int) $team['id']);
+            $team = $allTeams[$i];
+            $tid = (int) $team['id'];
+            $needs = $teamNeeds[$tid];
+            $bestAtPos = $teamBestByPos[$tid] ?? [];
 
-            // Try to match a prospect to team need
+            // Score each available prospect for this team
             $bestMatch = null;
-            foreach ($prospects as $p) {
+            $bestScore = -999;
+
+            foreach ($allProspects as $p) {
                 if (in_array((int) $p['id'], $usedProspects)) continue;
 
-                if (in_array($p['position'], $needs)) {
-                    $bestMatch = $p;
-                    break;
+                $score = (int) $p['actual_overall'];
+                $pos = $p['position'];
+                $potential = $p['potential'] ?? 'average';
+
+                // Bonus for filling a need (top 3 needs get bigger bonus)
+                $needIdx = array_search($pos, $needs);
+                if ($needIdx !== false) {
+                    $score += (5 - min($needIdx, 4)) * 4; // +20 for #1 need, +16 for #2, etc.
                 }
-            }
-            // Fallback to BPA
-            if (!$bestMatch) {
-                foreach ($prospects as $p) {
-                    if (!in_array((int) $p['id'], $usedProspects)) {
-                        $bestMatch = $p;
-                        break;
-                    }
+
+                // Bonus for elite/high potential
+                if ($potential === 'elite') $score += 12;
+                elseif ($potential === 'high') $score += 6;
+
+                // Penalty if team already has a star at this position (80+ OVR)
+                $existingBest = $bestAtPos[$pos] ?? 0;
+                if ($existingBest >= 85) $score -= 20; // Already have a stud, don't draft this
+                elseif ($existingBest >= 80) $score -= 10;
+
+                // Combine score bonus
+                $combineScore = (int) ($p['combine_score'] ?? 50);
+                if ($combineScore >= 90) $score += 5;
+                elseif ($combineScore >= 80) $score += 3;
+
+                // Character flag penalty (slight — teams still draft talent)
+                if (!empty($p['character_flag'])) $score -= 3;
+
+                // Generational talent override — always top pick material
+                if ($potential === 'elite' && $combineScore >= 88) {
+                    $score += 15; // Near-impossible to pass on
+                }
+
+                if ($score > $bestScore) {
+                    $bestScore = $score;
+                    $bestMatch = $p;
                 }
             }
 
             if (!$bestMatch) continue;
             $usedProspects[] = (int) $bestMatch['id'];
-
-            $pick = $i + 1;
-            $pName = $bestMatch['first_name'] . ' ' . $bestMatch['last_name'];
-            $scoutLine = $this->getScoutingLine($bestMatch['position'], $bestMatch['potential'] ?? 'average');
-
-            $body .= "{$pick}. {$team['city']} {$team['name']} — {$pName}, {$bestMatch['position']}, {$bestMatch['college']}\n";
-            $body .= "   {$scoutLine}\n\n";
+            $picks[] = ['pick' => $i + 1, 'team' => $team, 'prospect' => $bestMatch, 'needs' => $needs];
         }
 
-        $body .= "This board is far from final. Stay tuned — the offseason is just getting started.";
+        // Build the article
+        $body = $mockVersion === 1
+            ? "It's that time of year. The combine is in the books, pro days are wrapping up, and front offices are burning midnight oil. After analyzing every roster, every need, and every prospect in this class, here's my projection for the full first round.\n\n"
+            : "The board continues to shift. Since Mock Draft " . number_format(($mockVersion - 1) * 1.0, 1) . ", I've revisited every team's roster, adjusted for new intel, and updated my projections. Here's where things stand.\n\n";
+
+        foreach ($picks as $p) {
+            $pick = $p['pick'];
+            $team = $p['team'];
+            $prospect = $p['prospect'];
+            $needs = $p['needs'];
+            $pName = $prospect['first_name'] . ' ' . $prospect['last_name'];
+            $pos = $prospect['position'];
+            $college = $prospect['college'] ?? 'Unknown';
+            $potential = $prospect['potential'] ?? 'average';
+            $combineGrade = $prospect['combine_grade'] ?? $this->deriveCombineGrade((int) ($prospect['combine_score'] ?? 50));
+            $isNeedPick = in_array($pos, array_slice($needs, 0, 3));
+            $ovr = (int) $prospect['actual_overall'];
+
+            // Build context-aware analysis for each pick
+            $analysis = '';
+            if ($potential === 'elite') {
+                $analysis = "Generational talent. You don't overthink this — {$pName} is the best player in this class and it's not close.";
+            } elseif ($isNeedPick && $ovr >= 72) {
+                $analysis = "Fills their biggest need at {$pos} with a {$combineGrade}-grade prospect. This is a no-brainer.";
+            } elseif ($isNeedPick) {
+                $analysis = "{$pos} is a clear need, and {$pName} has the upside to be a starter by Year 2.";
+            } elseif ($ovr >= 74) {
+                $analysis = "Best player available. You can't pass on this kind of talent even if {$pos} isn't their top need.";
+            } else {
+                $analysis = "Solid value here. {$pName} grades out as a {$combineGrade} with {$potential} potential.";
+            }
+
+            if (!empty($prospect['character_flag'])) {
+                $flag = ucwords(str_replace('_', ' ', $prospect['character_flag']));
+                $analysis .= " Note: {$flag} concerns could cause a slide on draft day.";
+            }
+
+            $body .= "**{$pick}. {$team['city']} {$team['name']}** ({$team['wins']}-{$team['losses']}) — **{$pName}**, {$pos}, {$college}\n";
+            $body .= "   {$analysis}\n";
+            $body .= "   Top needs: " . implode(', ', array_slice($needs, 0, 3)) . "\n\n";
+        }
+
+        if ($mockVersion === 1) {
+            $body .= "This is just the beginning. Boards will shift, trades will reshape the order, and draft day always has surprises. But this is where I see it right now — and I'm putting my name on it.";
+        } else {
+            $body .= "The draft is getting closer, and I'm more confident in this board than the last one. But as always, draft day has a mind of its own. Stay tuned.";
+        }
 
         $this->insertArticle(
             $leagueId, $seasonId, $week, 'draft_coverage',

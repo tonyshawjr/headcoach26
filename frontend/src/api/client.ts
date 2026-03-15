@@ -125,7 +125,7 @@ export const profileApi = {
 export const leagueApi = {
   list: () => api.get<{ leagues: League[] }>('/leagues').then((r) => r.leagues),
   get: (id: number) => api.get<League>(`/leagues/${id}`),
-  advance: (id: number) => api.post<{ success: boolean; week: number; phase: string }>(`/leagues/${id}/advance`),
+  advance: (id: number) => api.post<{ success: boolean; week: number; phase: string; message?: string; offseason?: { phase?: string; [key: string]: unknown } }>(`/leagues/${id}/advance`),
 };
 
 // Teams
@@ -1248,8 +1248,50 @@ export const advanceApi = {
     api.put(`/leagues/${leagueId}/advance-settings`, settings),
 };
 
+export interface OffseasonPhaseMeta {
+  id: string;
+  week: number;
+  label: string;
+  short: string;
+}
+
+export interface OffseasonStatus {
+  offseason_phase: string | null;
+  league_phase: string;
+  season_year: number;
+  phase_index: number;
+  total_phases: number;
+  week_number: number;
+  week_label: string;
+  week_short: string;
+  total_weeks: number;
+  summary: string;
+  phases: OffseasonPhaseMeta[];
+  pending_actions: { action: string; count: number; message: string }[];
+}
+
+export interface OffseasonExpiringContract {
+  contract_id: number;
+  player_id: number;
+  team_id: number;
+  salary_annual: number;
+  cap_hit: number;
+  years_remaining: number;
+  first_name: string;
+  last_name: string;
+  position: string;
+  overall_rating: number;
+  age: number;
+  potential: string;
+}
+
 export const offseasonApi = {
   report: () => api.get<OffseasonReport>('/offseason/report'),
+  status: () => api.get<OffseasonStatus>('/offseason/status'),
+  expiringContracts: () => api.get<{ expiring_contracts: OffseasonExpiringContract[]; count: number }>('/offseason/expiring-contracts'),
+  reSign: (playerId: number, salaryOffer: number, yearsOffer: number) =>
+    api.post(`/offseason/re-sign/${playerId}`, { salary_offer: salaryOffer, years_offer: yearsOffer }),
+  decline: (playerId: number) => api.post(`/offseason/decline/${playerId}`),
 };
 
 // --- Fantasy Football ---
