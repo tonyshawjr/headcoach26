@@ -275,7 +275,7 @@ class ColumnistEngine
             $fanPosts = [
                 "I've been a {$fanTeam['name']} fan since I was 5 years old and I'm telling you, this is THE YEAR. {$record} and rolling!",
                 "Nobody believed us in the preseason. {$fanTeam['name']} at {$record}. Keep doubting, we'll keep winning.",
-                "The {$fanTeam['name']} are {$record} and I've never been more confident in this roster. Super Bowl or bust!",
+                "The {$fanTeam['name']} are {$record} and I've never been more confident in this roster. Big Game or bust!",
             ];
         } else {
             $fanPosts = [

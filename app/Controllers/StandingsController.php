@@ -525,6 +525,98 @@ class StandingsController
     }
 
     /**
+     * GET /api/standings/award-history
+     * Full award history: MVP, OPOY, DPOY, COTY, All-League, Gridiron Classic per season.
+     */
+    public function awardHistory(): void
+    {
+        $auth = AuthMiddleware::handle();
+        if (!$auth) return;
+
+        $leagueId = (int) $auth['league_id'];
+
+        // Get all season awards grouped by year
+        $stmt = $this->db->prepare(
+            "SELECT sa.season_year, sa.award_type, sa.winner_type, sa.winner_id, sa.stats,
+                    CASE WHEN sa.winner_type = 'player'
+                        THEN (SELECT p.first_name || ' ' || p.last_name FROM players p WHERE p.id = sa.winner_id)
+                        WHEN sa.winner_type = 'coach'
+                        THEN (SELECT c.name FROM coaches c WHERE c.id = sa.winner_id)
+                        ELSE NULL END AS winner_name,
+                    CASE WHEN sa.winner_type = 'player'
+                        THEN (SELECT t.abbreviation FROM teams t JOIN players p ON p.team_id = t.id WHERE p.id = sa.winner_id)
+                        WHEN sa.winner_type = 'coach'
+                        THEN (SELECT t.abbreviation FROM teams t JOIN coaches c ON c.team_id = t.id WHERE c.id = sa.winner_id)
+                        ELSE NULL END AS team_abbr,
+                    CASE WHEN sa.winner_type = 'player'
+                        THEN (SELECT t.primary_color FROM teams t JOIN players p ON p.team_id = t.id WHERE p.id = sa.winner_id)
+                        ELSE NULL END AS team_color,
+                    CASE WHEN sa.winner_type = 'player'
+                        THEN (SELECT p.position FROM players p WHERE p.id = sa.winner_id)
+                        ELSE NULL END AS position,
+                    CASE WHEN sa.winner_type = 'player'
+                        THEN (SELECT p.overall_rating FROM players p WHERE p.id = sa.winner_id)
+                        ELSE NULL END AS overall_rating,
+                    CASE WHEN sa.winner_type = 'player'
+                        THEN (SELECT p.image_url FROM players p WHERE p.id = sa.winner_id)
+                        ELSE NULL END AS image_url
+             FROM season_awards sa
+             WHERE sa.league_id = ?
+             ORDER BY sa.season_year DESC, sa.award_type"
+        );
+        $stmt->execute([$leagueId]);
+        $allAwards = $stmt->fetchAll();
+
+        // Group by year
+        $byYear = [];
+        foreach ($allAwards as $a) {
+            $year = (int) $a['season_year'];
+            if (!isset($byYear[$year])) {
+                $byYear[$year] = [
+                    'season_year' => $year,
+                    'mvp' => null,
+                    'opoy' => null,
+                    'dpoy' => null,
+                    'coty' => null,
+                    'all_league_first' => [],
+                    'all_league_second' => [],
+                    'gridiron_classic' => [],
+                ];
+            }
+
+            $entry = [
+                'winner_id' => (int) $a['winner_id'],
+                'winner_name' => $a['winner_name'],
+                'team_abbr' => $a['team_abbr'],
+                'team_color' => $a['team_color'],
+                'position' => $a['position'],
+                'overall_rating' => $a['overall_rating'] ? (int) $a['overall_rating'] : null,
+                'image_url' => $a['image_url'],
+            ];
+
+            $type = $a['award_type'];
+            if ($type === 'MVP') {
+                $byYear[$year]['mvp'] = $entry;
+            } elseif ($type === 'Offensive Player of the Year') {
+                $byYear[$year]['opoy'] = $entry;
+            } elseif ($type === 'Defensive Player of the Year') {
+                $byYear[$year]['dpoy'] = $entry;
+            } elseif ($type === 'Coach of the Year') {
+                $entry['winner_name'] = $a['winner_name'];
+                $byYear[$year]['coty'] = $entry;
+            } elseif ($type === 'all_league_first') {
+                $byYear[$year]['all_league_first'][] = $entry;
+            } elseif ($type === 'all_league_second') {
+                $byYear[$year]['all_league_second'][] = $entry;
+            } elseif ($type === 'gridiron_classic') {
+                $byYear[$year]['gridiron_classic'][] = $entry;
+            }
+        }
+
+        Response::json(['history' => array_values($byYear)]);
+    }
+
+    /**
      * GET /api/achievements
      * Check achievement conditions for the user's team.
      */

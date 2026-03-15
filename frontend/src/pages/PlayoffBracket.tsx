@@ -51,12 +51,12 @@ interface SeedingData {
   conferences: Record<string, PlayoffTeam[]>;
 }
 
-const ROUND_ORDER = ['wild_card', 'divisional', 'conference_championship', 'super_bowl'];
+const ROUND_ORDER = ['wild_card', 'divisional', 'conference_championship', 'big_game'];
 const ROUND_LABELS: Record<string, string> = {
   wild_card: 'Wild Card',
   divisional: 'Divisional',
   conference_championship: 'Conference Championship',
-  super_bowl: 'Championship',
+  big_game: 'The Big Game',
 };
 
 function MatchupCard({
@@ -290,7 +290,7 @@ export default function PlayoffBracket() {
             const isCurrentRound = bracket?.current_round === roundKey;
 
             // Split by conference for non-championship rounds
-            const isChampionship = roundKey === 'super_bowl';
+            const isChampionship = roundKey === 'big_game';
 
             return (
               <motion.div

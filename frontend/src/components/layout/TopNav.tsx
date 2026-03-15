@@ -279,15 +279,10 @@ export function TopNav() {
           {/* Logo */}
           <Link
             to="/"
-            className="mr-4 flex items-center gap-2 py-1"
+            className="mr-4 flex items-center py-1"
           >
-            <div
-              className="flex items-center rounded px-2 py-1"
-              style={{ backgroundColor: team?.primary_color ?? '#2188FF' }}
-            >
-              <span className="font-display text-sm tracking-wide text-white">HC</span>
-              <span className="ml-0.5 font-display text-sm tracking-wide text-white/70">26</span>
-            </div>
+            <span className="nav-logo">HEAD COACH</span>
+            <span className="nav-logo nav-logo-number" style={{ color: team?.primary_color ?? '#2188FF' }}>26</span>
           </Link>
 
           {/* Team Badge */}

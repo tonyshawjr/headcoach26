@@ -19,7 +19,7 @@ class PlayoffEngine
         'wild_card' => 0,
         'divisional' => 1,
         'conference_championship' => 2,
-        'super_bowl' => 3,
+        'big_game' => 3,
     ];
 
     public function __construct()
@@ -215,7 +215,7 @@ class PlayoffEngine
 
         $seeding = $this->calculatePlayoffSeeding($leagueId);
 
-        if ($nextRound === 'super_bowl') {
+        if ($nextRound === 'big_game') {
             return $this->generateSuperBowl($leagueId, $seasonId, $nextWeek, $seeding);
         }
 
@@ -352,10 +352,10 @@ class PlayoffEngine
         $nextRound = $currentRound ? $this->getNextRound($currentRound) : null;
         $isComplete = $this->isPlayoffsComplete($leagueId);
 
-        // Find champion if super bowl is played
+        // Find champion if Big Game is played
         $champion = null;
-        if ($isComplete && !empty($rounds['super_bowl'])) {
-            $sb = $rounds['super_bowl'][0];
+        if ($isComplete && !empty($rounds['big_game'])) {
+            $sb = $rounds['big_game'][0];
             if ($sb['is_played'] && $sb['winner_id']) {
                 $champTeam = $this->team->find($sb['winner_id']);
                 if ($champTeam) {
@@ -399,7 +399,7 @@ class PlayoffEngine
     }
 
     /**
-     * Check if the playoffs are fully complete (super bowl played).
+     * Check if the playoffs are fully complete (Big Game played).
      */
     public function isPlayoffsComplete(int $leagueId): bool
     {
@@ -408,7 +408,7 @@ class PlayoffEngine
 
         $sb = $this->game->query(
             "SELECT id, is_simulated FROM games
-             WHERE league_id = ? AND season_id = ? AND game_type = 'super_bowl'",
+             WHERE league_id = ? AND season_id = ? AND game_type = 'big_game'",
             [$leagueId, (int)$season['id']]
         );
 
@@ -502,7 +502,7 @@ class PlayoffEngine
         $season = $this->league->getCurrentSeason($leagueId);
         if (!$season) return null;
 
-        $roundOrder = ['wild_card', 'divisional', 'conference_championship', 'super_bowl'];
+        $roundOrder = ['wild_card', 'divisional', 'conference_championship', 'big_game'];
 
         // Find the latest round that has games
         $latestRound = null;
@@ -661,7 +661,7 @@ class PlayoffEngine
     }
 
     /**
-     * Generate the Super Bowl game.
+     * Generate the Big Game game.
      * One winner from each conference, higher seed is "home" (neutral site).
      */
     private function generateSuperBowl(int $leagueId, int $seasonId, int $week, array $seeding): array
@@ -675,7 +675,7 @@ class PlayoffEngine
             }
             $confTeamIds = array_map(fn($t) => (int)$t['id'], $seededTeams);
 
-            // Use getRemainingTeams (eliminated-based) for the Super Bowl since all rounds are complete
+            // Use getRemainingTeams (eliminated-based) for the Big Game since all rounds are complete
             $remaining = $this->getRemainingTeams($leagueId, $conf, $confTeamIds, $seedLookup);
 
             if (count($remaining) === 1) {
@@ -694,7 +694,7 @@ class PlayoffEngine
         $games = [
             $this->makePlayoffGame(
                 $leagueId, $seasonId, $week,
-                'super_bowl', (int)$champs[0]['id'], (int)$champs[1]['id']
+                'big_game', (int)$champs[0]['id'], (int)$champs[1]['id']
             )
         ];
 
@@ -752,7 +752,7 @@ class PlayoffEngine
             'wild_card' => 'Wild Card',
             'divisional' => 'Divisional Round',
             'conference_championship' => 'Conference Championship',
-            'super_bowl' => 'Championship',
+            'big_game' => 'The Big Game',
             default => ucfirst(str_replace('_', ' ', $gameType)),
         };
     }

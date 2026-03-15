@@ -103,7 +103,7 @@ export default function Schedule() {
                   : weekNumber === 21
                     ? 'Conference Championship'
                     : weekNumber === 22
-                      ? 'Super Bowl'
+                      ? 'The Big Game'
                       : `Week ${weekNum}`
               : null;
 

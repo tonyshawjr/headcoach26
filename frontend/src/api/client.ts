@@ -528,8 +528,12 @@ export interface Article {
   body: string;
   type: string;
   author_name: string;
+  author_persona?: string;
   week: number;
   published_at: string;
+  team_id?: number | null;
+  player_id?: number | null;
+  game_id?: number | null;
 }
 
 export interface ArticlesResponse {

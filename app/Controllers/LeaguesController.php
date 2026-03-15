@@ -397,7 +397,7 @@ class LeaguesController
                 break;
 
             case 'playoffs':
-                // Check if playoffs are complete (Super Bowl played)
+                // Check if playoffs are complete (Big Game played)
                 try {
                     $playoffEngine = new PlayoffEngine();
                     if ($playoffEngine->isPlayoffsComplete((int) $params['id'])) {

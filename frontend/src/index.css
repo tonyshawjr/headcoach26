@@ -288,3 +288,18 @@
 }
 .btn-secondary:hover { background: var(--bg-elevated); }
 .btn-secondary:disabled { opacity: 0.5; }
+
+/* Nav logo — Madden-style bold condensed */
+.nav-logo {
+  font-family: 'Barlow Condensed', 'Oswald', sans-serif;
+  font-weight: 900;
+  font-style: italic;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: white;
+  line-height: 1;
+}
+.nav-logo-number {
+  margin-left: 3px;
+}

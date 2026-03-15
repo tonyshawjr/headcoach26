@@ -2,25 +2,21 @@ import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import {
   useSchedule, useArticles, useRoster, useSimulateWeek,
-  useAdvanceWeek, useStandings, useCapSpace, useActivity,
+  useAdvanceWeek, useStandings, useCapSpace,
 } from '@/hooks/useApi';
-import { GameCard } from '@/components/cards/GameCard';
-import { ArticleCard } from '@/components/cards/ArticleCard';
 import { TeamBadge } from '@/components/TeamBadge';
 import Onboarding from '@/components/Onboarding';
 import {
   ClipboardList, Play, FastForward, GraduationCap,
-  UserPlus, CalendarDays, ChevronRight, TrendingUp,
-  DollarSign, Heart, Shield, Briefcase, AlertTriangle,
+  UserPlus, CalendarDays, ChevronRight,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import type { Game, StandingsTeam } from '@/api/client';
+import type { Game, Article, StandingsTeam } from '@/api/client';
 import { useCoachingStaff, useDepthChart } from '@/hooks/useApi';
+import { ArticleHeroImage } from '@/components/ArticleHeroImage';
 
 /* ═══════════════════════════════════════════════════
-   Coach's Agenda — the "what should I do next" prompt
-   Full width, top of page, most important element
+   Coach's Agenda — slim inline action bar
    ═══════════════════════════════════════════════════ */
 
 function CoachAgenda() {
@@ -37,9 +33,7 @@ function CoachAgenda() {
   if (schedule && team && week > 0) {
     const weekGames = schedule[String(week)] ?? [];
     const myWeekGame = weekGames.find((g) => g.home_team_id === team.id || g.away_team_id === team.id);
-    if (myWeekGame && !myWeekGame.is_simulated) {
-      myNextGame = myWeekGame;
-    }
+    if (myWeekGame && !myWeekGame.is_simulated) myNextGame = myWeekGame;
     weekSimmed = weekGames.length > 0 && weekGames.every((g) => g.is_simulated);
   }
 
@@ -83,158 +77,140 @@ function CoachAgenda() {
     }
   };
 
+  const btnPrimary = "inline-flex items-center gap-2 rounded-lg bg-[var(--accent-blue)] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50";
+  const btnSecondary = "inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-5 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-50";
+
   let message = '';
-  let action: React.ReactNode = null;
+  let actions: React.ReactNode = null;
 
   if (phase === 'preseason') {
-    message = "Welcome to the preseason, Coach. Build your roster and set your staff, then start the season when you're ready.";
-    action = (
-      <div className="flex flex-wrap gap-3 mt-4">
-        <button onClick={handleAdvance} disabled={advance.isPending} className="btn-primary">
+    message = "Preseason — Build your roster and staff, then start the season.";
+    actions = (
+      <>
+        <button onClick={handleAdvance} disabled={advance.isPending} className={btnPrimary}>
           <FastForward className="h-4 w-4" />
           {advance.isPending ? 'Starting...' : 'Start Season'}
         </button>
-        <Link to="/my-team" className="btn-secondary">
+        <Link to="/my-team" className={btnSecondary}>
           <ClipboardList className="h-4 w-4" />
           View Roster
         </Link>
-      </div>
+      </>
     );
   } else if (phase === 'regular' || phase === 'playoffs') {
     if (weekSimmed) {
-      message = `Week ${week} is in the books.${lastResult ? ` ${lastResult}.` : ''} Ready to move on?`;
-      const nextLabel = phase === 'regular' && week >= 18
-        ? 'Start Playoffs'
-        : phase === 'playoffs' && week >= 22
-          ? 'Enter Offseason'
-          : `Go to Week ${week + 1}`;
-      action = (
-        <div className="flex flex-wrap gap-3 mt-4">
-          <button onClick={handleAdvance} disabled={advance.isPending} className="btn-primary">
+      message = `Week ${week} complete.${lastResult ? ` ${lastResult}.` : ''} Ready to move on?`;
+      const nextLabel = phase === 'regular' && week >= 18 ? 'Start Playoffs' : phase === 'playoffs' && week >= 22 ? 'Enter Offseason' : `Go to Week ${week + 1}`;
+      actions = (
+        <>
+          <button onClick={handleAdvance} disabled={advance.isPending} className={btnPrimary}>
             <FastForward className="h-4 w-4" />
             {advance.isPending ? 'Advancing...' : nextLabel}
           </button>
-          <Link to="/schedule" className="btn-secondary">
+          <Link to="/schedule" className={btnSecondary}>
             <CalendarDays className="h-4 w-4" />
-            View Results
+            Results
           </Link>
-        </div>
+        </>
       );
     } else if (myNextGame) {
-      message = `Week ${week} is here. Your ${team?.name} play the ${opponentName} this week.`;
-      action = (
-        <div className="flex flex-wrap gap-3 mt-4">
-          <Link to={`/game-plan/${myNextGame.id}`} className="btn-primary">
+      message = `Week ${week} — ${team?.name} vs ${opponentName}`;
+      actions = (
+        <>
+          <Link to={`/game-plan/${myNextGame.id}`} className={btnPrimary}>
             <ClipboardList className="h-4 w-4" />
-            Set Game Plan
+            Game Plan
           </Link>
-          <button onClick={handleSim} disabled={sim.isPending} className="btn-secondary">
+          <button onClick={handleSim} disabled={sim.isPending} className={btnSecondary}>
             <Play className="h-4 w-4" />
-            {sim.isPending ? 'Playing...' : `Play Week ${week}`}
+            {sim.isPending ? 'Playing...' : 'Sim'}
           </button>
-        </div>
+        </>
       );
     } else {
-      message = `Week ${week} — no game for your team this week.`;
-      action = (
-        <div className="flex flex-wrap gap-3 mt-4">
-          <button onClick={handleSim} disabled={sim.isPending} className="btn-secondary">
-            <Play className="h-4 w-4" />
-            {sim.isPending ? 'Playing...' : `Play Week ${week}`}
-          </button>
-        </div>
+      message = `Week ${week} — bye week`;
+      actions = (
+        <button onClick={handleSim} disabled={sim.isPending} className={btnSecondary}>
+          <Play className="h-4 w-4" />
+          {sim.isPending ? 'Playing...' : `Sim Week ${week}`}
+        </button>
       );
     }
   } else if (phase === 'offseason') {
-    message = "The season is over. Hit the Draft Room and Free Agency to retool for next year.";
-    action = (
-      <div className="flex flex-wrap gap-3 mt-4">
-        <Link to="/draft" className="btn-primary">
+    message = "Offseason — Draft and sign free agents.";
+    actions = (
+      <>
+        <Link to="/draft" className={btnPrimary}>
           <GraduationCap className="h-4 w-4" />
-          Draft Room
+          Draft
         </Link>
-        <Link to="/free-agency" className="btn-secondary">
+        <Link to="/free-agency" className={btnSecondary}>
           <UserPlus className="h-4 w-4" />
           Free Agency
         </Link>
-        <button onClick={handleAdvance} disabled={advance.isPending} className="btn-secondary">
+        <button onClick={handleAdvance} disabled={advance.isPending} className={btnSecondary}>
           <FastForward className="h-4 w-4" />
-          {advance.isPending ? 'Starting...' : 'Begin New Season'}
+          {advance.isPending ? 'Starting...' : 'New Season'}
         </button>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-5 sm:p-6">
-      <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-        Coach&apos;s Agenda
-      </p>
-      <p className="text-[var(--text-primary)] leading-relaxed">{message}</p>
-      {action}
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] px-5 py-3">
+      <p className="text-sm text-[var(--text-primary)] font-medium flex-1 min-w-0">{message}</p>
+      <div className="flex flex-wrap items-center gap-2">{actions}</div>
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════
-   Next Game — full width matchup card
+   Hero Article — large featured story
    ═══════════════════════════════════════════════════ */
 
-function NextGameCard({ game, myTeamId, phase }: { game: Game | null; myTeamId?: number; phase: string }) {
-  if (!game) {
-    const messages: Record<string, string> = {
-      preseason: 'Your schedule begins once the season starts.',
-      offseason: 'The season is over. Focus on the Draft and Free Agency.',
-      regular: 'No upcoming game on the schedule.',
-      playoffs: 'No upcoming playoff game.',
-    };
-    return (
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-8 text-center">
-        <CalendarDays className="mx-auto mb-3 h-6 w-6 text-[var(--text-muted)]" />
-        <p className="text-[var(--text-secondary)]">
-          {messages[phase] ?? 'No game scheduled.'}
-        </p>
-      </div>
-    );
-  }
+const typeConfig: Record<string, { label: string; color: string }> = {
+  game_recap: { label: 'RECAP', color: 'var(--accent-blue)' },
+  power_rankings: { label: 'RANKINGS', color: 'var(--accent-gold)' },
+  feature: { label: 'FEATURE', color: 'var(--accent-red)' },
+  column: { label: 'COLUMN', color: '#8b5cf6' },
+  morning_blitz: { label: 'BLITZ', color: 'var(--accent-gold)' },
+};
 
-  const home = game.home_team;
-  const away = game.away_team;
-  const isHome = game.home_team_id === myTeamId;
+function HeroArticle({ article }: { article: Article }) {
+  const config = typeConfig[article.type] ?? { label: 'NEWS', color: 'var(--accent-blue)' };
 
   return (
-    <Link to={`/game-plan/${game.id}`} className="block group">
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden transition-colors hover:bg-[var(--bg-elevated)]">
-        <div className="p-6 sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-6 text-center">
-            {game.game_type === 'playoff' ? 'Playoff Game' : `Week ${game.week}`}
-            {game.weather && game.weather !== 'clear' && game.weather !== 'dome' ? ` — ${game.weather}` : ''}
+    <Link to={`/article/${article.id}`} className="group block h-full">
+      <div className="relative overflow-hidden rounded-xl bg-[var(--bg-surface)] border border-[var(--border)] h-full min-h-[320px] flex flex-col justify-end">
+        {/* Dynamic team-color gradient + pattern + player photo */}
+        <ArticleHeroImage
+          teamId={article.team_id}
+          articleType={article.type}
+          articleId={article.id}
+        />
+
+        {/* Content at bottom */}
+        <div className="relative z-10 p-6 sm:p-8">
+          <span
+            className="inline-block rounded px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.15em] mb-3"
+            style={{ backgroundColor: config.color, color: '#fff' }}
+          >
+            {config.label}
+          </span>
+
+          <h2 className="font-display text-2xl sm:text-3xl leading-tight text-white tracking-tight">
+            {article.headline}
+          </h2>
+
+          <p className="mt-3 text-sm text-white/60 line-clamp-2 max-w-[600px]">
+            {(article.body ?? '').substring(0, 200)}...
           </p>
 
-          <div className="flex items-center justify-center gap-6 sm:gap-12">
-            <div className="flex flex-col items-center gap-3 min-w-0">
-              <TeamBadge abbreviation={away?.abbreviation} primaryColor={away?.primary_color} secondaryColor={away?.secondary_color} size="lg" />
-              <div className="text-center">
-                <p className="font-semibold text-[var(--text-primary)]">{away?.city} {away?.name}</p>
-                <p className="text-sm text-[var(--text-secondary)]">{away?.wins ?? 0}-{away?.losses ?? 0}</p>
-              </div>
-            </div>
-
-            <span className="text-xl font-bold text-[var(--text-muted)]">{isHome ? 'VS' : '@'}</span>
-
-            <div className="flex flex-col items-center gap-3 min-w-0">
-              <TeamBadge abbreviation={home?.abbreviation} primaryColor={home?.primary_color} secondaryColor={home?.secondary_color} size="lg" />
-              <div className="text-center">
-                <p className="font-semibold text-[var(--text-primary)]">{home?.city} {home?.name}</p>
-                <p className="text-sm text-[var(--text-secondary)]">{home?.wins ?? 0}-{home?.losses ?? 0}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex items-center justify-center gap-1.5 text-[var(--accent-blue)] group-hover:opacity-80 transition-opacity">
-            <ClipboardList className="h-4 w-4" />
-            <span className="text-sm font-semibold">Set Game Plan</span>
-            <ChevronRight className="h-4 w-4" />
+          <div className="mt-4 flex items-center gap-3 text-[11px] text-white/40">
+            {article.author_name && (
+              <span className="font-semibold text-white/60">{article.author_name}</span>
+            )}
+            {article.week != null && <span>Week {article.week}</span>}
           </div>
         </div>
       </div>
@@ -242,8 +218,70 @@ function NextGameCard({ game, myTeamId, phase }: { game: Game | null; myTeamId?:
   );
 }
 
+function HeroPlaceholder() {
+  const { league } = useAuthStore();
+  const phase = league?.phase ?? 'preseason';
+
+  const messages: Record<string, string> = {
+    preseason: 'Start the season to generate game recaps and news.',
+    regular: 'Play games to see headlines and stories here.',
+    playoffs: 'Playoff coverage will appear here.',
+    offseason: 'Offseason news will appear once moves are made.',
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-xl bg-[var(--bg-surface)] border border-[var(--border)] h-full min-h-[320px] flex flex-col items-center justify-center">
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+      <div className="relative z-10 text-center px-6">
+        <CalendarDays className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
+        <p className="font-display text-xl text-white/80">{messages[phase] ?? 'No stories yet.'}</p>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════
-   Team Snapshot — compact vital stats
+   Side Article — vertical accent bar + headline
+   ═══════════════════════════════════════════════════ */
+
+function SideArticle({ article }: { article: Article }) {
+  const config = typeConfig[article.type] ?? { label: 'NEWS', color: 'var(--text-muted)' };
+
+  return (
+    <Link to={`/article/${article.id}`} className="group flex gap-4 py-4 border-b border-[var(--border)] last:border-0">
+      {/* Vertical accent bar + rotated type label */}
+      <div className="flex flex-col items-center gap-1 shrink-0">
+        <div className="w-[3px] flex-1 rounded-full" style={{ backgroundColor: config.color }} />
+        <span
+          className="text-[8px] font-bold uppercase tracking-[0.2em] whitespace-nowrap"
+          style={{ color: config.color, writingMode: 'vertical-lr', transform: 'rotate(180deg)' }}
+        >
+          {config.label}
+        </span>
+        <div className="w-[3px] flex-1 rounded-full" style={{ backgroundColor: config.color }} />
+      </div>
+
+      {/* Text */}
+      <div className="min-w-0 flex-1">
+        <h3 className="text-[14px] font-bold leading-snug text-[var(--text-primary)] line-clamp-3">
+          {article.headline}
+        </h3>
+        <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+          {article.author_name && <span className="font-semibold">{article.author_name}</span>}
+          {article.week != null && (
+            <>
+              <span className="opacity-40">&bull;</span>
+              <span>Week {article.week}</span>
+            </>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Team Snapshot — compact 3x2 stat grid
    ═══════════════════════════════════════════════════ */
 
 function TeamSnapshot() {
@@ -252,66 +290,37 @@ function TeamSnapshot() {
   const { data: capInfo } = useCapSpace(team?.id);
 
   const injuredCount = roster?.active?.filter((p) => p.injury).length ?? 0;
-  const rosterSize = (roster?.active?.length ?? 0);
-
   const capRemaining = capInfo?.cap_remaining ?? 0;
-  const capTotal = capInfo?.total_cap ?? 1;
-  const capPct = Math.round((capRemaining / capTotal) * 100);
+
+  const stats = [
+    { label: 'Record', value: `${team?.wins ?? 0}-${team?.losses ?? 0}${team?.ties ? `-${team.ties}` : ''}` },
+    { label: 'Rating', value: String(team?.overall_rating ?? 0) },
+    { label: 'Morale', value: String(team?.morale ?? 0) },
+    { label: 'Cap Space', value: `$${(capRemaining / 1_000_000).toFixed(1)}M` },
+    { label: 'Injuries', value: String(injuredCount) },
+    { label: 'Job Security', value: String(coach?.job_security ?? 0) },
+  ];
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-5">
-      <div className="flex items-center gap-3 mb-4">
-        <TeamBadge
-          abbreviation={team?.abbreviation}
-          primaryColor={team?.primary_color}
-          secondaryColor={team?.secondary_color}
-          size="md"
-        />
-        <div className="min-w-0">
-          <p className="font-bold text-[var(--text-primary)] truncate">{team?.city} {team?.name}</p>
-          <p className="text-sm font-semibold text-[var(--text-secondary)]">
-            {team?.wins ?? 0}-{team?.losses ?? 0}{team?.ties ? `-${team.ties}` : ''}
-            {team?.streak ? <span className="ml-2 text-xs font-normal text-[var(--text-muted)]">{team.streak}</span> : ''}
-          </p>
-        </div>
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">
+      <div className="flex items-center gap-3 mb-3">
+        <TeamBadge abbreviation={team?.abbreviation} primaryColor={team?.primary_color} secondaryColor={team?.secondary_color} size="sm" />
+        <p className="font-display text-sm text-[var(--text-primary)] tracking-tight">{team?.city} {team?.name}</p>
       </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <SnapshotStat icon={<TrendingUp className="h-3.5 w-3.5" />} label="Rating" value={String(team?.overall_rating ?? 0)} />
-        <SnapshotStat icon={<Heart className="h-3.5 w-3.5" />} label="Morale" value={String(team?.morale ?? 0)} />
-        <SnapshotStat icon={<DollarSign className="h-3.5 w-3.5" />} label="Cap Space" value={`$${(capRemaining / 1_000_000).toFixed(1)}M`} sub={`${capPct}% free`} />
-        <SnapshotStat icon={<AlertTriangle className="h-3.5 w-3.5" />} label="Injuries" value={String(injuredCount)} sub={`${rosterSize} roster`} />
-        <SnapshotStat icon={<Shield className="h-3.5 w-3.5" />} label="Job Security" value={String(coach?.job_security ?? 0)} />
-        <SnapshotStat icon={<Briefcase className="h-3.5 w-3.5" />} label="Influence" value={String(coach?.influence ?? 0)} />
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <Link to="/my-team" className="text-center rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors">
-          Roster
-        </Link>
-        <Link to="/salary-cap" className="text-center rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors">
-          Salary Cap
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-function SnapshotStat({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: string }) {
-  return (
-    <div className="flex items-start gap-2 rounded-lg bg-[var(--bg-elevated)] px-3 py-2.5">
-      <span className="mt-0.5 text-[var(--text-muted)]">{icon}</span>
-      <div className="min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</p>
-        <p className="text-sm font-bold text-[var(--text-primary)] leading-tight">{value}</p>
-        {sub && <p className="text-[10px] text-[var(--text-muted)]">{sub}</p>}
+      <div className="grid grid-cols-3 gap-2">
+        {stats.map((s) => (
+          <div key={s.label} className="text-center rounded-lg bg-[var(--bg-elevated)] px-2 py-2">
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{s.label}</p>
+            <p className="text-sm font-bold text-[var(--text-primary)] font-stat">{s.value}</p>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════
-   Division Standings Snapshot
+   Division Standings mini-table
    ═══════════════════════════════════════════════════ */
 
 function StandingsSnapshot() {
@@ -320,61 +329,29 @@ function StandingsSnapshot() {
 
   if (!standingsData || !team) return null;
 
-  const myConf = team.conference;
-  const myDiv = team.division;
-
-  // Find my division from standings
-  const confDivs = standingsData.divisions?.[myConf];
-  const divTeams: StandingsTeam[] = confDivs?.[myDiv] ?? [];
-
+  const confDivs = standingsData.divisions?.[team.conference];
+  const divTeams: StandingsTeam[] = confDivs?.[team.division] ?? [];
   if (divTeams.length === 0) return null;
 
   const sorted = [...divTeams].sort((a, b) => (b.win_pct ?? 0) - (a.win_pct ?? 0));
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-5">
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          {myDiv}
-        </h3>
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--text-muted)]">{team.division}</h3>
         <Link to="/standings" className="text-[10px] font-semibold text-[var(--accent-blue)] hover:opacity-80 transition-opacity uppercase tracking-wider">
           Full Standings
         </Link>
       </div>
-
       <div className="space-y-0">
-        {/* Header */}
-        <div className="flex items-center gap-2 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          <span className="flex-1">Team</span>
-          <span className="w-6 text-center">W</span>
-          <span className="w-6 text-center">L</span>
-          <span className="w-10 text-center">Pct</span>
-        </div>
-
         {sorted.map((t, i) => {
           const isMe = t.id === team.id;
           return (
-            <div
-              key={t.id}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                isMe ? 'bg-[var(--accent-blue)]/8 font-semibold' : ''
-              }`}
-            >
-              <span className="w-4 text-xs text-[var(--text-muted)]">{i + 1}</span>
-              <TeamBadge
-                abbreviation={t.abbreviation}
-                primaryColor={t.primary_color}
-                secondaryColor={t.secondary_color}
-                size="xs"
-              />
-              <span className={`flex-1 text-[13px] truncate ${isMe ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
-                {t.abbreviation}
-              </span>
-              <span className={`w-6 text-center font-stat text-xs ${isMe ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{t.wins}</span>
-              <span className={`w-6 text-center font-stat text-xs ${isMe ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{t.losses}</span>
-              <span className={`w-10 text-center font-stat text-xs ${isMe ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
-                {(t.win_pct ?? 0).toFixed(3).replace(/^0/, '')}
-              </span>
+            <div key={t.id} className={`flex items-center gap-2 py-1.5 px-2 rounded text-[12px] ${isMe ? 'bg-[var(--accent-blue)]/8' : ''}`}>
+              <span className="w-3 text-[10px] text-[var(--text-muted)] font-stat">{i + 1}</span>
+              <TeamBadge abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="xs" />
+              <span className={`flex-1 font-medium ${isMe ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{t.abbreviation}</span>
+              <span className="font-stat text-[var(--text-secondary)]">{t.wins}-{t.losses}</span>
             </div>
           );
         })}
@@ -384,148 +361,45 @@ function StandingsSnapshot() {
 }
 
 /* ═══════════════════════════════════════════════════
-   Score Strip — this week's scores (inline version)
+   Next Game preview — compact card
    ═══════════════════════════════════════════════════ */
 
-function WeekScores() {
-  const { team, league } = useAuthStore();
-  const { data: schedule } = useSchedule(league?.id);
-
-  const currentWeek = league?.current_week ?? 0;
-  const weekGames: Game[] = schedule?.[String(currentWeek)] ?? [];
-  const simmedGames = weekGames.filter((g) => g.is_simulated);
-
-  if (simmedGames.length === 0) return null;
+function NextGamePreview({ game, myTeamId }: { game: Game; myTeamId?: number }) {
+  const home = game.home_team;
+  const away = game.away_team;
+  const isHome = game.home_team_id === myTeamId;
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
-      <div className="flex items-center justify-between px-5 pt-4 pb-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          Week {currentWeek} Scores
-        </h3>
-        <Link to="/schedule" className="text-[10px] font-semibold text-[var(--accent-blue)] hover:opacity-80 transition-opacity uppercase tracking-wider">
-          All Scores
-        </Link>
-      </div>
-      <div className="flex overflow-x-auto gap-2 px-4 pb-4 pt-1" style={{ scrollbarWidth: 'none' }}>
-        {simmedGames.map((game) => {
-          const isMyGame = team && (game.home_team_id === team.id || game.away_team_id === team.id);
-          return (
-            <Link
-              key={game.id}
-              to={`/box-score/${game.id}`}
-              className={`shrink-0 rounded-lg border px-3 py-2 transition-colors hover:bg-[var(--bg-elevated)] ${
-                isMyGame ? 'border-[var(--accent-blue)]/40 bg-[var(--accent-blue)]/5' : 'border-[var(--border)]'
-              }`}
-            >
-              <MiniScore game={game} />
-            </Link>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function MiniScore({ game }: { game: Game }) {
-  const awayWon = (game.away_score ?? 0) > (game.home_score ?? 0);
-  const homeWon = (game.home_score ?? 0) > (game.away_score ?? 0);
-
-  return (
-    <div className="flex flex-col gap-0.5 min-w-[80px]">
-      <div className="flex items-center justify-between gap-3">
-        <span className={`text-[11px] font-semibold ${awayWon ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
-          {game.away_team?.abbreviation ?? 'AWY'}
-        </span>
-        <span className={`font-stat text-xs ${awayWon ? 'text-[var(--text-primary)] font-bold' : 'text-[var(--text-muted)]'}`}>
-          {game.away_score}
-        </span>
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <span className={`text-[11px] font-semibold ${homeWon ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
-          {game.home_team?.abbreviation ?? 'HME'}
-        </span>
-        <span className={`font-stat text-xs ${homeWon ? 'text-[var(--text-primary)] font-bold' : 'text-[var(--text-muted)]'}`}>
-          {game.home_score}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
-   League Activity — recent transactions
-   ═══════════════════════════════════════════════════ */
-
-function LeagueActivity() {
-  const { data: activity } = useActivity();
-
-  // Activity from commissioner endpoint shows team activity, not transactions
-  // For now show team activity if available
-  if (!activity || activity.length === 0) return null;
-
-  // Show top 5 most active teams as a quick "league pulse"
-  const active = [...activity]
-    .filter((a) => a.games_played > 0)
-    .sort((a, b) => b.games_played - a.games_played)
-    .slice(0, 5);
-
-  if (active.length === 0) return null;
-
-  return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-5">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          League Activity
-        </h3>
-        <Link to="/league-hub" className="text-[10px] font-semibold text-[var(--accent-blue)] hover:opacity-80 transition-opacity uppercase tracking-wider">
-          League Hub
-        </Link>
-      </div>
-      <div className="space-y-2">
-        {active.map((a) => (
-          <div key={a.team_id} className="flex items-center gap-2 text-sm">
-            <span className="text-xs font-bold text-[var(--text-muted)] w-8">{a.abbreviation}</span>
-            <span className="flex-1 text-[var(--text-secondary)] text-xs truncate">
-              {a.team_name} — {a.games_played} game{a.games_played !== 1 ? 's' : ''} played
-              {a.plans_missed > 0 && `, ${a.plans_missed} plan${a.plans_missed !== 1 ? 's' : ''} missed`}
-            </span>
+    <Link to={`/game-plan/${game.id}`} className="block group">
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 transition-colors hover:bg-[var(--bg-elevated)]">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--text-muted)] mb-3 text-center">
+          {game.game_type === 'playoff' ? 'Playoff' : `Week ${game.week}`}
+        </p>
+        <div className="flex items-center justify-center gap-4">
+          <div className="flex flex-col items-center gap-1.5">
+            <TeamBadge abbreviation={away?.abbreviation} primaryColor={away?.primary_color} secondaryColor={away?.secondary_color} size="md" />
+            <span className="text-[11px] font-bold text-[var(--text-primary)]">{away?.abbreviation}</span>
+            <span className="text-[10px] text-[var(--text-muted)]">{away?.wins ?? 0}-{away?.losses ?? 0}</span>
           </div>
-        ))}
+          <span className="text-sm font-bold text-[var(--text-muted)]">{isHome ? 'VS' : '@'}</span>
+          <div className="flex flex-col items-center gap-1.5">
+            <TeamBadge abbreviation={home?.abbreviation} primaryColor={home?.primary_color} secondaryColor={home?.secondary_color} size="md" />
+            <span className="text-[11px] font-bold text-[var(--text-primary)]">{home?.abbreviation}</span>
+            <span className="text-[10px] text-[var(--text-muted)]">{home?.wins ?? 0}-{home?.losses ?? 0}</span>
+          </div>
+        </div>
+        <div className="mt-3 flex items-center justify-center gap-1 text-[var(--accent-blue)] text-[11px] font-semibold group-hover:opacity-80">
+          <ClipboardList className="h-3 w-3" />
+          Game Plan
+          <ChevronRight className="h-3 w-3" />
+        </div>
       </div>
-    </div>
+    </Link>
   );
 }
 
 /* ═══════════════════════════════════════════════════
-   Last Game Result — compact score + link
-   ═══════════════════════════════════════════════════ */
-
-function LastGameResult() {
-  const { team, league } = useAuthStore();
-  const { data: schedule } = useSchedule(league?.id);
-
-  if (!schedule || !team) return null;
-
-  const allGames = Object.values(schedule).flat();
-  const mySimmed = allGames
-    .filter((g) => g.is_simulated && (g.home_team_id === team.id || g.away_team_id === team.id))
-    .sort((a, b) => b.week - a.week);
-
-  if (mySimmed.length === 0) return null;
-
-  const game = mySimmed[0];
-
-  return (
-    <div>
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">Last Game</h2>
-      <GameCard game={game} myTeamId={team.id} />
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
-   Dashboard — Main Layout
+   Dashboard — Editorial Layout
    ═══════════════════════════════════════════════════ */
 
 export default function Dashboard() {
@@ -538,7 +412,7 @@ export default function Dashboard() {
 
   const phase = league?.phase ?? 'preseason';
 
-  // Onboarding state
+  // Onboarding
   const showOnboarding = typeof window !== 'undefined' && localStorage.getItem('onboarding-dismissed') !== 'true';
   const hasRoster = (roster?.active?.length ?? 0) > 0;
   const hasDepthChart = depthChart ? Object.values(depthChart).flat().length >= 10 : false;
@@ -551,77 +425,64 @@ export default function Dashboard() {
   if (schedule && team) {
     const allGames = Object.values(schedule).flat();
     const myGames = allGames.filter((g) => g.home_team_id === team.id || g.away_team_id === team.id);
-    const sorted = myGames.sort((a, b) => a.week - b.week);
-    nextGame = sorted.find((g) => !g.is_simulated) ?? null;
+    nextGame = myGames.sort((a, b) => a.week - b.week).find((g) => !g.is_simulated) ?? null;
   }
 
-  const articles = articlesResp?.articles?.slice(0, 4) ?? [];
+  const articles = articlesResp?.articles ?? [];
+  const heroArticle = articles[0] ?? null;
+  const sideArticles = articles.slice(1, 6);
 
   return (
-    <div className="space-y-6">
-      {/* Onboarding (conditional) */}
+    <div className="space-y-5">
+      {/* Onboarding */}
       {showOnboarding && (
-        <Onboarding
-          hasRoster={hasRoster}
-          hasDepthChart={hasDepthChart}
-          hasStaff={hasStaff}
-          hasGamePlan={hasGamePlan}
-        />
+        <Onboarding hasRoster={hasRoster} hasDepthChart={hasDepthChart} hasStaff={hasStaff} hasGamePlan={hasGamePlan} />
       )}
 
-      {/* 1. Coach's Agenda — full width */}
+      {/* 1. Coach's Agenda — slim bar */}
       <CoachAgenda />
 
-      {/* 2. Next Game — full width */}
-      <NextGameCard game={nextGame} myTeamId={team?.id} phase={phase} />
+      {/* 2. Editorial: Hero article + side articles */}
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px] items-stretch">
+        <div className="flex flex-col">
+          {heroArticle ? <HeroArticle article={heroArticle} /> : <HeroPlaceholder />}
+        </div>
 
-      {/* 3. Two columns: Team Snapshot + Standings */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <TeamSnapshot />
-        <StandingsSnapshot />
-      </div>
-
-      {/* 4. Score Strip — horizontal scroll of this week's scores */}
-      <WeekScores />
-
-      {/* 5. Two columns: News + Activity & Last Game */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        {/* Left: Latest News */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-[var(--text-primary)]">Latest News</h2>
-            <Link to="/league-hub" className="text-sm font-medium text-[var(--accent-blue)] hover:opacity-80 transition-opacity">
+        <div className="flex flex-col">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--text-muted)]">Latest</h2>
+            <Link to="/league-hub" className="text-[10px] font-semibold text-[var(--accent-blue)] hover:opacity-80 transition-opacity uppercase tracking-wider">
               All News
             </Link>
           </div>
-
-          {articles.length > 0 ? (
-            <div className="space-y-3">
-              {articles.map((a, i) => (
-                <motion.div
-                  key={a.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: i * 0.05 }}
-                >
-                  <ArticleCard article={a} />
-                </motion.div>
+          {sideArticles.length > 0 ? (
+            <div>
+              {sideArticles.map((a) => (
+                <SideArticle key={a.id} article={a} />
               ))}
             </div>
           ) : (
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-8 text-center">
-              <p className="text-[var(--text-secondary)]">
-                Headlines will appear once games are played.
-              </p>
+            <div className="flex-1 flex items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-6">
+              <p className="text-sm text-[var(--text-muted)]">More stories coming soon.</p>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Right: Activity + Last Game */}
-        <div className="space-y-6">
-          <LeagueActivity />
-          <LastGameResult />
-        </div>
+      {/* 3. Bottom row: Team Snapshot + Standings + Next Game */}
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <TeamSnapshot />
+        <StandingsSnapshot />
+        {nextGame ? (
+          <NextGamePreview game={nextGame} myTeamId={team?.id} />
+        ) : (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-6 flex flex-col items-center justify-center">
+            <CalendarDays className="mb-2 h-6 w-6 text-[var(--text-muted)]" />
+            <p className="text-sm text-[var(--text-secondary)] text-center">
+              {phase === 'offseason' ? 'Season over' : phase === 'preseason' ? 'Start the season' : 'No upcoming game'}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

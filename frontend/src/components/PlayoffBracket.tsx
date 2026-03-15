@@ -7,7 +7,7 @@ interface PlayoffBracketProps {
   userTeamId?: number;
 }
 
-type RoundKey = 'wild_card' | 'divisional' | 'conference_championship' | 'super_bowl';
+type RoundKey = 'wild_card' | 'divisional' | 'conference_championship' | 'big_game';
 
 interface Matchup {
   game?: Game;
@@ -22,14 +22,14 @@ const ROUND_LABELS: Record<RoundKey, string> = {
   wild_card: 'Wild Card',
   divisional: 'Divisional',
   conference_championship: 'Conference Championship',
-  super_bowl: 'Super Bowl',
+  big_game: 'The Big Game',
 };
 
 const ROUND_WEEK: Record<RoundKey, number> = {
   wild_card: 19,
   divisional: 20,
   conference_championship: 21,
-  super_bowl: 22,
+  big_game: 22,
 };
 
 /**
@@ -96,7 +96,7 @@ function MatchupBox({
       }`}
       style={{ width: 180 }}
     >
-      {/* Round label (only for Super Bowl) */}
+      {/* Round label (only for The Big Game) */}
       {roundLabel && (
         <div className="bg-[var(--bg-elevated)] px-2 py-1 text-center">
           <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-[var(--accent-gold)]">
@@ -225,7 +225,7 @@ export function PlayoffBracket({ games, userTeamId }: PlayoffBracketProps) {
       wild_card: [],
       divisional: [],
       conference_championship: [],
-      super_bowl: [],
+      big_game: [],
     };
 
     for (const g of games) {
@@ -238,8 +238,8 @@ export function PlayoffBracket({ games, userTeamId }: PlayoffBracketProps) {
         byRound.divisional.push(g);
       } else if (g.week === ROUND_WEEK.conference_championship) {
         byRound.conference_championship.push(g);
-      } else if (g.week === ROUND_WEEK.super_bowl) {
-        byRound.super_bowl.push(g);
+      } else if (g.week === ROUND_WEEK.big_game) {
+        byRound.big_game.push(g);
       }
     }
 
@@ -342,8 +342,8 @@ export function PlayoffBracket({ games, userTeamId }: PlayoffBracketProps) {
       };
     }
 
-    // Super Bowl
-    const sbGame = byRound.super_bowl[0];
+    // The Big Game
+    const sbGame = byRound.big_game[0];
     const sbMatchup: Matchup = sbGame
       ? {
           game: sbGame,
@@ -366,7 +366,7 @@ export function PlayoffBracket({ games, userTeamId }: PlayoffBracketProps) {
     );
   }
 
-  // Render: Left conference | Super Bowl center | Right conference
+  // Render: Left conference | The Big Game center | Right conference
   const leftConf = confList[0];
   const rightConf = confList[1] ?? confList[0];
   const leftBracket = confBrackets[leftConf];
@@ -376,7 +376,7 @@ export function PlayoffBracket({ games, userTeamId }: PlayoffBracketProps) {
     <div className="space-y-4">
       {/* Round labels header */}
       <div className="flex items-center justify-center gap-1">
-        {(['wild_card', 'divisional', 'conference_championship', 'super_bowl'] as RoundKey[]).map((r) => (
+        {(['wild_card', 'divisional', 'conference_championship', 'big_game'] as RoundKey[]).map((r) => (
           <div key={r} className="flex-1 text-center">
             <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">
               {ROUND_LABELS[r]}
@@ -436,17 +436,17 @@ export function PlayoffBracket({ games, userTeamId }: PlayoffBracketProps) {
                 <MatchupBox matchup={leftBracket.champ} userTeamId={userTeamId} />
               </div>
 
-              {/* Connector to Super Bowl */}
+              {/* Connector to The Big Game */}
               <Connector direction="straight" />
             </div>
           </div>
 
-          {/* --- Super Bowl (center) --- */}
+          {/* --- The Big Game (center) --- */}
           <div className="flex flex-col items-center justify-center px-2">
             <MatchupBox
               matchup={sbMatchup}
               userTeamId={userTeamId}
-              roundLabel="Super Bowl"
+              roundLabel="The Big Game"
             />
             {sbMatchup.winner && sbMatchup.game && (
               <div className="mt-2 text-center">
@@ -489,7 +489,7 @@ export function PlayoffBracket({ games, userTeamId }: PlayoffBracketProps) {
               </div>
 
               <div className="flex items-center gap-0">
-                {/* Connector from Super Bowl */}
+                {/* Connector from The Big Game */}
                 <Connector direction="straight" />
 
                 {/* Conference Championship */}
