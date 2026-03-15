@@ -58,7 +58,6 @@ const navMenus: NavMenu[] = [
       { label: 'Leaders', to: '/leaders' },
       { label: 'Awards', to: '/awards' },
       { label: 'Records', to: '/records' },
-      { label: 'League Hub', to: '/league-hub' },
       { label: 'History', to: '/league-history' },
     ],
   },
@@ -307,6 +306,20 @@ export function TopNav() {
 
           {/* Desktop nav menus */}
           <div className="hidden items-center md:flex">
+            {/* The Hub — top-level link */}
+            <NavLink
+              to="/league-hub"
+              className={({ isActive }) =>
+                `px-3 py-3.5 text-[13px] font-semibold tracking-wide transition-colors ${
+                  isActive
+                    ? 'text-white border-b-2 border-[#2188FF]'
+                    : 'text-[#999] hover:text-white'
+                }`
+              }
+            >
+              The Hub
+            </NavLink>
+
             {navMenus.map((menu) => {
               const visibleItems = filterItems(menu.items);
               if (visibleItems.length === 0) return null;
@@ -610,6 +623,9 @@ export function TopNav() {
             {/* Dashboard link */}
             <NavLink to="/" className={mobileLinkClass}>
               Dashboard
+            </NavLink>
+            <NavLink to="/league-hub" className={mobileLinkClass}>
+              The Hub
             </NavLink>
 
             {/* Mobile action button */}

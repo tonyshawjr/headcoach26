@@ -410,6 +410,72 @@ function NextGamePreview({ game, myTeamId }: { game: Game; myTeamId?: number }) 
 }
 
 /* ═══════════════════════════════════════════════════
+   What's Next — always shows what's coming up
+   ═══════════════════════════════════════════════════ */
+
+function WhatsNext({ phase, week, nextGame, myTeamId }: { phase: string; week: number; nextGame: Game | null; myTeamId?: number }) {
+  // During season with a game coming up
+  if (nextGame && (phase === 'regular' || phase === 'playoffs')) {
+    return <NextGamePreview game={nextGame} myTeamId={myTeamId} />;
+  }
+
+  // Build a list of upcoming events based on phase
+  type UpcomingItem = { icon: React.ElementType; label: string; sub: string; to: string; accent?: string };
+  const items: UpcomingItem[] = [];
+
+  if (phase === 'preseason') {
+    items.push(
+      { icon: ClipboardList, label: 'Set Your Roster', sub: 'Build the depth chart before kickoff', to: '/my-team?tab=depth' },
+      { icon: CalendarDays, label: 'Start the Season', sub: 'Begin the regular season', to: '/' },
+    );
+  } else if (phase === 'offseason') {
+    items.push(
+      { icon: UserPlus, label: 'Free Agency', sub: 'Browse available players and bid', to: '/free-agency', accent: 'var(--accent-blue)' },
+      { icon: GraduationCap, label: 'Draft Room', sub: 'Scout prospects for the future', to: '/draft', accent: '#8b5cf6' },
+      { icon: ClipboardList, label: 'Contract Planner', sub: 'Manage expiring deals', to: '/contract-planner' },
+    );
+  } else if (phase === 'regular' || phase === 'playoffs') {
+    // Bye week or all games done
+    items.push(
+      { icon: CalendarDays, label: 'Schedule', sub: 'View remaining games', to: '/schedule' },
+      { icon: ClipboardList, label: 'Depth Chart', sub: 'Adjust your lineup', to: '/my-team?tab=depth' },
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-[var(--border)] bg-[var(--bg-elevated)]/40">
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">What&apos;s Next</h3>
+      </div>
+      <div className="divide-y divide-[var(--border)]">
+        {items.map((item, i) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={i}
+              to={item.to}
+              className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-elevated)] transition-colors"
+            >
+              <div
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                style={{ backgroundColor: `${item.accent ?? 'var(--accent-blue)'}15` }}
+              >
+                <Icon className="h-4 w-4" style={{ color: item.accent ?? 'var(--accent-blue)' }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">{item.label}</p>
+                <p className="text-xs text-[var(--text-muted)]">{item.sub}</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-[var(--text-muted)] shrink-0" />
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
    Dashboard — Editorial Layout
    ═══════════════════════════════════════════════════ */
 
@@ -635,20 +701,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 3. Bottom row: Team Snapshot + Standings + Next Game */}
+      {/* 3. Bottom row: Team Snapshot + Standings + What's Next */}
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <TeamSnapshot />
         <StandingsSnapshot />
-        {nextGame ? (
-          <NextGamePreview game={nextGame} myTeamId={team?.id} />
-        ) : (
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-6 flex flex-col items-center justify-center">
-            <CalendarDays className="mb-2 h-6 w-6 text-[var(--text-muted)]" />
-            <p className="text-sm text-[var(--text-secondary)] text-center">
-              {phase === 'offseason' ? 'Season over' : phase === 'preseason' ? 'Start the season' : 'No upcoming game'}
-            </p>
-          </div>
-        )}
+        <WhatsNext phase={phase} week={week} nextGame={nextGame} myTeamId={team?.id} />
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useArticles, useSocial, usePowerRankings } from '@/hooks/useApi';
 import { ArticleCard } from '@/components/cards/ArticleCard';
 import { SocialPostCard } from '@/components/cards/SocialPostCard';
+import { weekLabel, weekLabelShort } from '@/lib/weekLabel';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TeamBadge } from '@/components/TeamBadge';
@@ -70,7 +71,7 @@ export default function LeagueHub() {
 
   // Week navigation for recaps
   const canGoPrevWeek = recapWeek > 1;
-  const canGoNextWeek = recapWeek < currentWeek;
+  const canGoNextWeek = recapWeek < Math.min(currentWeek, 22);
 
   return (
     <PageLayout>
@@ -154,10 +155,10 @@ export default function LeagueHub() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <div className="text-center min-w-[120px]">
-                <p className="text-sm font-bold text-[var(--text-primary)]">Week {recapWeek}</p>
+              <div className="text-center min-w-[160px]">
+                <p className="text-sm font-bold text-[var(--text-primary)]">{weekLabel(recapWeek)}</p>
                 <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
-                  {recapWeek === currentWeek ? 'Current Week' : recapWeek < currentWeek ? 'Past' : ''}
+                  {recapWeek === currentWeek ? 'Current' : ''}
                 </p>
               </div>
               <button
@@ -171,7 +172,7 @@ export default function LeagueHub() {
 
             {/* Week quick-jump pills */}
             <div className="flex flex-wrap justify-center gap-1.5 mb-6">
-              {Array.from({ length: Math.min(currentWeek, 18) }, (_, i) => i + 1).map((w) => (
+              {Array.from({ length: Math.min(currentWeek, 22) }, (_, i) => i + 1).map((w) => (
                 <button
                   key={w}
                   onClick={() => setRecapWeek(w)}
@@ -181,7 +182,7 @@ export default function LeagueHub() {
                       : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                   }`}
                 >
-                  {w}
+                  {w <= 18 ? w : weekLabelShort(w)}
                 </button>
               ))}
             </div>
@@ -191,7 +192,7 @@ export default function LeagueHub() {
             ) : recaps.length === 0 ? (
               <EmptyBlock
                 icon={Newspaper}
-                title={`No recaps for Week ${recapWeek}`}
+                title={`No recaps for ${weekLabel(recapWeek)}`}
                 description="Recaps are generated after games are simulated."
               />
             ) : (

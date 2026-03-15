@@ -973,6 +973,38 @@ class NarrativeEngine
         return $options[array_rand($options)];
     }
 
+    /**
+     * Convert week number to human-readable label.
+     * Weeks 1-18: "Week 1" through "Week 18"
+     * Week 19: "Wild Card Weekend"
+     * Week 20: "Divisional Round"
+     * Week 21: "Conference Championship"
+     * Week 22: "The Big Game"
+     */
+    private function weekLabel(int $week): string
+    {
+        return match (true) {
+            $week === 19 => 'Wild Card Weekend',
+            $week === 20 => 'Divisional Round',
+            $week === 21 => 'Conference Championship',
+            $week === 22 => 'The Big Game',
+            $week > 22   => 'Offseason',
+            default       => "Week {$week}",
+        };
+    }
+
+    private function weekLabelShort(int $week): string
+    {
+        return match (true) {
+            $week === 19 => 'Wild Card',
+            $week === 20 => 'Divisional',
+            $week === 21 => 'Conf. Championship',
+            $week === 22 => 'The Big Game',
+            $week > 22   => 'Offseason',
+            default       => "Week {$week}",
+        };
+    }
+
     private function joinList(array $items): string
     {
         if (count($items) === 0) return '';
@@ -2194,15 +2226,29 @@ class NarrativeEngine
         // Determine hot-take topic
         $topic = null;
         $focusTeam = null;
+        $isPlayoffs = $week >= 19;
 
-        // Check for 5+ win streak
-        foreach ($teams as $t) {
-            if (str_starts_with($t['streak'] ?? '', 'W')) {
-                $streakNum = (int) substr($t['streak'], 1);
-                if ($streakNum >= 5) {
-                    $topic = 'contender';
-                    $focusTeam = $t;
-                    break;
+        // Playoff-specific topics override everything
+        if ($week === 22) {
+            $topic = 'big_game_react';
+        } elseif ($week === 21) {
+            $topic = 'conference_champ_react';
+        } elseif ($week === 20) {
+            $topic = 'divisional_react';
+        } elseif ($week === 19) {
+            $topic = 'wild_card_react';
+        }
+
+        // Regular season: Check for 5+ win streak
+        if (!$topic) {
+            foreach ($teams as $t) {
+                if (str_starts_with($t['streak'] ?? '', 'W')) {
+                    $streakNum = (int) substr($t['streak'], 1);
+                    if ($streakNum >= 5) {
+                        $topic = 'contender';
+                        $focusTeam = $t;
+                        break;
+                    }
                 }
             }
         }
@@ -2329,6 +2375,42 @@ class NarrativeEngine
                     $paragraphs[] = "Every great story needs an underdog. The {$name} might just be writing the best story in the league right now.";
                 }
                 $paragraphs[] = "Keep an eye on this team. They are not done yet.";
+                break;
+
+            case 'wild_card_react':
+                $headline = "{$authorName}: Wild Card Weekend Delivered — and Then Some";
+                $paragraphs[] = "Wild Card Weekend is always chaos, and this year did not disappoint.";
+                $paragraphs[] = "Six games. Six elimination matchups. Seasons ended, dreams survived, and the bracket is set for the Divisional Round. This is what playoff football is all about.";
+                $paragraphs[] = "The upsets were real. The blowouts were emphatic. And somewhere out there, a team that barely squeaked into the playoffs is now one win away from the Conference Championship.";
+                $paragraphs[] = "The Divisional Round promises even more. The stakes get higher. The matchups get tougher. And the margin for error disappears completely.";
+                $paragraphs[] = "Buckle up. The real tournament starts now.";
+                break;
+
+            case 'divisional_react':
+                $headline = "{$authorName}: The Divisional Round Separated the Contenders from the Pretenders";
+                $paragraphs[] = "Four games. Four teams eliminated. The Divisional Round is the great separator — the round where talent alone is not enough. You need execution, composure, and a little bit of luck.";
+                $paragraphs[] = "We now know our Conference Championship matchups, and they are everything we hoped for. The four remaining teams have earned the right to play for a trip to The Big Game.";
+                $paragraphs[] = "What did we learn? We learned that regular season records mean nothing once the playoffs start. We learned that defense travels. And we learned that the best quarterbacks find a way when it matters most.";
+                $paragraphs[] = "Two games left before The Big Game. Two chances to write your legacy. There is no tomorrow. There is no next week. Win, or your season is over.";
+                break;
+
+            case 'conference_champ_react':
+                $headline = "{$authorName}: Conference Championship Sunday — Two Teams Punch Their Ticket to The Big Game";
+                $paragraphs[] = "This is the day when seasons become legacies. Conference Championship Sunday delivered everything we wanted and more.";
+                $paragraphs[] = "Two teams celebrated. Two teams had their hearts ripped out. That is the brutal beauty of the playoffs — there are no consolation prizes. You either win or you watch someone else celebrate on your field.";
+                $paragraphs[] = "The Big Game matchup is set. The two best teams standing will meet for the championship, and the anticipation is already building. The storylines are rich. The matchups are compelling.";
+                $paragraphs[] = "For the two losing teams, the offseason starts with the worst kind of silence — the silence of being so close you could taste it. For the winners, the party is just getting started.";
+                $paragraphs[] = "The Big Game is next. One game. One champion. Nothing else matters.";
+                break;
+
+            case 'big_game_react':
+                $headline = "{$authorName}: The Big Game Is Over — A Champion Is Crowned";
+                $paragraphs[] = "It is over. The confetti has fallen. The Lombardi Trophy has been lifted. A champion has been crowned.";
+                $paragraphs[] = "Every season is a marathon, but this one felt like an epic. From the first snap of the preseason to the final whistle of The Big Game, this season delivered drama, heartbreak, and triumph in equal measure.";
+                $paragraphs[] = "For the winning team, this is the culmination of everything — every early morning, every film session, every fourth-quarter comeback during the regular season. It all led to this moment.";
+                $paragraphs[] = "For the losers, the sting will last all offseason. They will replay every mistake, every missed opportunity, every what-if. That is the cruelty of this game — second place is remembered for losing, not for how far they came.";
+                $paragraphs[] = "But for now, let us celebrate the champions. They earned it. Every single snap of it.";
+                $paragraphs[] = "See you next season.";
                 break;
 
             default: // power_debate
@@ -2488,20 +2570,52 @@ class NarrativeEngine
             $sections[] = "BY THE NUMBERS:\n- " . implode("\n- ", array_slice($statLines, 0, 3));
         }
 
-        // LOOKING AHEAD
-        $nextWeek = $week + 1;
-        $sections[] = "LOOKING AHEAD: Week {$nextWeek} is just around the corner. Expect the stakes to keep climbing as the season marches on.";
+        // LOOKING AHEAD — playoff-aware
+        $isPlayoffs = $week >= 19;
+        if ($week === 22) {
+            // Big Game just happened — no "looking ahead"
+            $sections[] = "WHAT A SEASON: That's a wrap. The Big Game is over. What a ride it's been.";
+        } elseif ($week === 21) {
+            $sections[] = "NEXT UP: The Big Game. Two teams remain. One will be crowned champion.";
+        } elseif ($week === 20) {
+            $sections[] = "NEXT UP: The Conference Championships. Four teams left standing. Win or go home.";
+        } elseif ($week === 19) {
+            $sections[] = "NEXT UP: The Divisional Round. The field is narrowing. Every game is an elimination game from here.";
+        } elseif ($week === 18) {
+            $sections[] = "NEXT UP: The playoffs begin. Wild Card Weekend is here. Six games, six chances to keep your season alive.";
+        } else {
+            $nextWeek = $week + 1;
+            $sections[] = "LOOKING AHEAD: Week {$nextWeek} is on deck. The race continues.";
+        }
 
-        // Build headline
-        $catchySummaries = [
-            'Upsets, Blowouts, and Drama',
-            'The Good, the Bad, and the Ugly',
-            'Winners, Losers, and Everything In Between',
-            'Shakeups Across the League',
-            'Statement Wins and Stunning Upsets',
-        ];
-        $catchySummary = $this->pickOne($catchySummaries);
-        $headline = "Morning Blitz: Week {$week} — {$catchySummary}";
+        // Build headline — playoff-aware
+        $weekName = $this->weekLabel($week);
+        if ($isPlayoffs) {
+            $playoffSummaries = [
+                'Win or Go Home',
+                'Elimination Day',
+                'The Madness Continues',
+                'Survive and Advance',
+                'Playoff Drama',
+            ];
+            if ($week === 22) {
+                $catchySummary = 'A Champion Is Crowned';
+            } elseif ($week === 21) {
+                $catchySummary = 'Conference Championship Recap';
+            } else {
+                $catchySummary = $this->pickOne($playoffSummaries);
+            }
+        } else {
+            $catchySummaries = [
+                'Upsets, Blowouts, and Drama',
+                'The Good, the Bad, and the Ugly',
+                'Winners, Losers, and Everything In Between',
+                'Shakeups Across the League',
+                'Statement Wins and Stunning Upsets',
+            ];
+            $catchySummary = $this->pickOne($catchySummaries);
+        }
+        $headline = "Morning Blitz: {$weekName} — {$catchySummary}";
 
         $body = implode("\n\n", $sections);
         $now = date('Y-m-d H:i:s');

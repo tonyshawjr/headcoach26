@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import teamLogos from '@/assets/logos';
 import { PlayerPhoto } from '@/components/PlayerPhoto';
 import { useAuthStore } from '@/stores/authStore';
 import { useRoster, useDepthChart, useAutoSetDepthChart, useUpdateDepthChart, useMoveToActive, useMoveToPracticeSquad, useMoveToIR, useReleasePlayer, useTeam } from '@/hooks/useApi';
@@ -63,6 +64,8 @@ export default function MyTeam() {
   // Trade navigation — go to full-page Trade Center
   const [psExpanded, setPsExpanded] = useState(false);
   const [irExpanded, setIrExpanded] = useState(true);
+  const [logoError, setLogoError] = useState(false);
+  const logoPath = team?.abbreviation ? teamLogos[team.abbreviation] ?? null : null;
 
   // Depth chart swap state: click a player to select, click another at a compatible position to swap
   const [swapSelection, setSwapSelection] = useState<{ pos: string; basePos: string; slot: number; playerId: number; name: string } | null>(null);
@@ -554,12 +557,23 @@ export default function MyTeam() {
                 }}
               />
               <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ zIndex: 5 }}>
-                <span
-                  className="text-[120px] sm:text-[160px] font-black text-white/15 tracking-wider leading-none select-none"
-                  style={{ transform: 'rotate(-12deg) translateY(10px)' }}
-                >
-                  {team?.abbreviation}
-                </span>
+                {logoPath && !logoError ? (
+                  <img
+                    key={logoPath}
+                    src={logoPath}
+                    alt=""
+                    className="w-[220px] sm:w-[280px] opacity-30 select-none pointer-events-none"
+                    style={{ transform: 'rotate(-6deg) translateY(5px)', filter: 'brightness(2)' }}
+                    onError={() => setLogoError(true)}
+                  />
+                ) : (
+                  <span
+                    className="text-[120px] sm:text-[160px] font-black text-white/15 tracking-wider leading-none select-none"
+                    style={{ transform: 'rotate(-12deg) translateY(10px)' }}
+                  >
+                    {team?.abbreviation}
+                  </span>
+                )}
               </div>
               <div className="absolute -top-2 -bottom-2 left-[15%] w-[6px]" style={{ background: 'rgba(255,255,255,0.15)', transform: 'skewX(-8deg)', zIndex: 8 }} />
               <div className="absolute -top-2 -bottom-2 right-[20px] w-[10px]" style={{ background: `${teamColor}66`, transform: 'skewX(-8deg)', boxShadow: '-2px 0 4px rgba(0,0,0,0.1)', zIndex: 10 }} />
