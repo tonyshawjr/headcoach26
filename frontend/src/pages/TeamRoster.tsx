@@ -223,7 +223,7 @@ export default function TeamRoster() {
         <div className="bg-[var(--bg-surface)]">
           <div className="flex items-stretch" style={{ minHeight: '180px' }}>
             {/* Abbreviation area with team color + angled strips */}
-            <div className="relative shrink-0 w-56 sm:w-72 hidden sm:block overflow-hidden">
+            <div className="relative shrink-0 w-56 sm:w-96 hidden sm:block overflow-hidden">
               <div
                 className="absolute inset-0"
                 style={{
@@ -231,25 +231,24 @@ export default function TeamRoster() {
                 }}
               />
 
-              {/* Big oversized angled abbreviation */}
-              <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ zIndex: 5 }}>
-                <span
-                  className="text-[120px] sm:text-[160px] font-black text-white/15 tracking-wider leading-none select-none"
-                  style={{ transform: 'rotate(-12deg) translateY(10px)' }}
-                >
-                  {team.abbreviation}
-                </span>
+              {/* Team logo or abbreviation watermark */}
+              <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ zIndex: 5, paddingRight: '30px' }}>
+                <img
+                  src={`/images/logos/${team.abbreviation}.svg`}
+                  alt=""
+                  className="w-[600px] sm:w-[750px] select-none pointer-events-none"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    const span = document.createElement('span');
+                    span.className = 'text-[120px] sm:text-[160px] font-black text-white/15 tracking-wider leading-none select-none';
+                    span.style.transform = 'rotate(-12deg) translateY(10px)';
+                    span.textContent = team.abbreviation;
+                    img.parentElement?.replaceChild(span, img);
+                  }}
+                />
               </div>
 
               {/* Angled strips — same as player page */}
-              <div
-                className="absolute -top-2 -bottom-2 left-[15%] w-[6px]"
-                style={{
-                  background: 'rgba(255,255,255,0.15)',
-                  transform: 'skewX(-8deg)',
-                  zIndex: 8,
-                }}
-              />
               <div
                 className="absolute -top-2 -bottom-2 right-[20px] w-[10px]"
                 style={{

@@ -548,21 +548,28 @@ export default function MyTeam() {
         <div className="bg-[var(--bg-surface)]">
           <div className="flex items-stretch" style={{ minHeight: '180px' }}>
             {/* Abbreviation area with angled strips */}
-            <div className="relative shrink-0 w-56 sm:w-72 hidden sm:block overflow-hidden">
+            <div className="relative shrink-0 w-56 sm:w-96 hidden sm:block overflow-hidden">
               <div
                 className="absolute inset-0"
                 style={{
                   background: `linear-gradient(135deg, ${teamColor} 0%, ${teamColor2} 100%)`,
                 }}
               />
-              <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ zIndex: 5 }}>
+              <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ zIndex: 5, paddingRight: '30px' }}>
                 <img
-                  src="/images/logos/PHX.svg"
-                  alt="logo"
-                  style={{ width: 300 }}
+                  src={`/images/logos/${team?.abbreviation}.svg`}
+                  alt=""
+                  className="w-[600px] sm:w-[750px] select-none pointer-events-none"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    const span = document.createElement('span');
+                    span.className = 'text-[120px] sm:text-[160px] font-black text-white/15 tracking-wider leading-none select-none';
+                    span.style.transform = 'rotate(-12deg) translateY(10px)';
+                    span.textContent = team?.abbreviation ?? '';
+                    img.parentElement?.replaceChild(span, img);
+                  }}
                 />
               </div>
-              <div className="absolute -top-2 -bottom-2 left-[15%] w-[6px]" style={{ background: 'rgba(255,255,255,0.15)', transform: 'skewX(-8deg)', zIndex: 8 }} />
               <div className="absolute -top-2 -bottom-2 right-[20px] w-[10px]" style={{ background: `${teamColor}66`, transform: 'skewX(-8deg)', boxShadow: '-2px 0 4px rgba(0,0,0,0.1)', zIndex: 10 }} />
               <div className="absolute -top-2 -bottom-2 right-[-8px] w-[35px]" style={{ background: 'var(--bg-surface)', transform: 'skewX(-8deg)', boxShadow: '-4px 0 10px rgba(0,0,0,0.15)', zIndex: 12 }} />
             </div>

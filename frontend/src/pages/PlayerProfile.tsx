@@ -222,6 +222,9 @@ export default function PlayerProfile() {
   // Trade navigation
   const [compareModalOpen, setCompareModalOpen] = useState(false);
   const [signing, setSigning] = useState(false);
+  const [showBidDialog, setShowBidDialog] = useState(false);
+  const [bidSalary, setBidSalary] = useState('');
+  const [bidYears, setBidYears] = useState('1');
   const [activeTab, setActiveTab] = useState('ratings');
   const [extensionModalOpen, setExtensionModalOpen] = useState(false);
   const [extensionSalary, setExtensionSalary] = useState('');
@@ -258,16 +261,21 @@ export default function PlayerProfile() {
 
   async function handleSign() {
     if (!freeAgent) return;
+    const salaryNum = parseFloat(bidSalary) * 1_000_000;
+    const yearsNum = parseInt(bidYears);
+    if (isNaN(salaryNum) || salaryNum <= 0) { alert('Enter a valid salary.'); return; }
+    if (isNaN(yearsNum) || yearsNum < 1 || yearsNum > 7) { alert('Years must be 1-7.'); return; }
     setSigning(true);
     try {
       const res = await fetch(`/api/free-agents/${freeAgent.free_agent_id}/bid`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ salary_offer: freeAgent.market_value, years_offer: 1 }),
+        body: JSON.stringify({ salary_offer: salaryNum, years_offer: yearsNum }),
       });
       const data = await res.json();
-      if (!res.ok) { alert(data?.error || 'Failed to sign player'); return; }
-      alert(`Offer submitted for ${player?.first_name} ${player?.last_name}!`);
+      if (!res.ok) { alert(data?.error || 'Failed to place bid'); return; }
+      setShowBidDialog(false);
+      alert(`Bid submitted for ${player?.first_name} ${player?.last_name}!`);
       navigate('/free-agency');
     } catch { alert('Network error'); } finally { setSigning(false); }
   }
@@ -540,11 +548,11 @@ export default function PlayerProfile() {
                   </button>
                   {freeAgent && (
                     <button
-                      onClick={handleSign}
+                      onClick={() => { setBidSalary((freeAgent.market_value / 1_000_000).toFixed(1)); setBidYears('1'); setShowBidDialog(true); }}
                       disabled={signing}
                       className="rounded bg-green-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-green-500 transition-colors disabled:opacity-50"
                     >
-                      {signing ? 'Signing...' : 'Sign Player'}
+                      {signing ? 'Signing...' : 'Make Offer'}
                     </button>
                   )}
                 </div>
@@ -1367,6 +1375,58 @@ export default function PlayerProfile() {
 
       {/* Modals */}
       <PlayerComparison playerId={player.id} playerName={`${player.first_name} ${player.last_name}`} open={compareModalOpen} onOpenChange={setCompareModalOpen} />
+
+      {/* Bid Dialog */}
+      {showBidDialog && freeAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowBidDialog(false)}>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-6 w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="font-display text-lg mb-1">Make an Offer</h3>
+            <p className="text-sm text-[var(--text-secondary)] mb-4">
+              {player?.first_name} {player?.last_name} — {player?.position}, {player?.overall_rating} OVR
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Salary ($/year in millions)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0.5"
+                  value={bidSalary}
+                  onChange={e => setBidSalary(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                  placeholder="e.g. 5.0"
+                />
+                <p className="text-xs text-[var(--text-muted)] mt-1">Market value: ${(freeAgent.market_value / 1_000_000).toFixed(1)}M/yr</p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">Contract Length (years)</label>
+                <select
+                  value={bidYears}
+                  onChange={e => setBidYears(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm"
+                >
+                  {[1,2,3,4,5,6,7].map(y => <option key={y} value={y}>{y} year{y > 1 ? 's' : ''}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setShowBidDialog(false)}
+                className="flex-1 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--bg-elevated)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSign}
+                disabled={signing}
+                className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500 transition-colors disabled:opacity-50"
+              >
+                {signing ? 'Submitting...' : 'Submit Bid'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

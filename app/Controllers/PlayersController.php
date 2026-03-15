@@ -1159,19 +1159,37 @@ class PlayersController
         if ($fa) {
             $contractEngine = new ContractEngine();
             $faMv = $contractEngine->calculateMarketValue($fa);
-            return [
-                'type' => 'free_agent',
-                'player_id' => (int) $fa['player_id'],
-                'name' => $fa['first_name'] . ' ' . $fa['last_name'],
-                'position' => $pos,
-                'overall_rating' => (int) $fa['overall_rating'],
-                'age' => (int) $fa['age'],
-                'potential' => $fa['potential'],
-                'estimated_cost' => $faMv,
-                'note' => (int) $fa['overall_rating'] >= $ovr
-                    ? "Upgrade available in free agency."
-                    : "Similar player available for less.",
-            ];
+            $currentSalary = (int) ($player['salary_annual'] ?? 0);
+
+            // Only suggest the FA if they're actually a better deal
+            // (higher OVR for similar money, or similar OVR for less money)
+            $faOvr = (int) $fa['overall_rating'];
+            $isCheaper = $faMv <= $currentSalary * 1.2; // within 20% of current salary
+            $isUpgrade = $faOvr > $ovr;
+            $isBetterValue = $isUpgrade || ($isCheaper && $faOvr >= $ovr - 2);
+
+            if ($isBetterValue) {
+                $note = '';
+                if ($isUpgrade && $isCheaper) {
+                    $note = "Upgrade available in free agency for similar money.";
+                } elseif ($isUpgrade) {
+                    $note = "Upgrade available in free agency.";
+                } else {
+                    $note = "Similar player available — saves cap space.";
+                }
+
+                return [
+                    'type' => 'free_agent',
+                    'player_id' => (int) $fa['player_id'],
+                    'name' => $fa['first_name'] . ' ' . $fa['last_name'],
+                    'position' => $pos,
+                    'overall_rating' => $faOvr,
+                    'age' => (int) $fa['age'],
+                    'potential' => $fa['potential'],
+                    'estimated_cost' => $faMv,
+                    'note' => $note,
+                ];
+            }
         }
 
         // Check draft prospects at this position (if scouted)

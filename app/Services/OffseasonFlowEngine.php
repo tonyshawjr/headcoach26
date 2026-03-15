@@ -1864,16 +1864,14 @@ class OffseasonFlowEngine
 
     private function calculateMarketValue(string $position, int $overall, int $age): int
     {
-        $base = 500000;
-        $ratingBonus = pow($overall / 100, 2) * 15000000;
-        $posMultiplier = match ($position) {
-            'QB' => 2.5, 'DE' => 1.4, 'CB' => 1.3, 'WR' => 1.3, 'OT' => 1.2,
-            'LB' => 1.1, 'DT' => 1.1, 'RB' => 1.0, 'TE' => 1.0, 'S' => 1.0,
-            'OG' => 0.9, 'C' => 0.9, 'K' => 0.5, 'P' => 0.4, 'LS' => 0.3,
-            default => 1.0,
-        };
-        $ageFactor = $age <= 26 ? 1.1 : ($age >= 31 ? 0.7 : 1.0);
-        return max($base, (int) ($ratingBonus * $posMultiplier * $ageFactor));
+        // Delegate to ContractEngine for a single source of truth
+        $contractEngine = new ContractEngine();
+        return $contractEngine->calculateMarketValue([
+            'position' => $position,
+            'overall_rating' => $overall,
+            'age' => $age,
+            'potential' => 'average',
+        ]);
     }
 
     // ================================================================
