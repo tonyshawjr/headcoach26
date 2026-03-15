@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { TeamBadge } from '@/components/TeamBadge';
-import type { FindTradeResult, TradeOpportunity, TradePackageSide, TeamNeed } from '@/api/client';
+import { toast } from 'sonner';
+import type { FindTradeResult, TradeOpportunity, TradePackageSide } from '@/api/client';
 
 interface FindTradeModalProps {
   playerId: number | null;
@@ -94,7 +95,7 @@ function PackageSide({ side, label, labelColor, onPlayerClick }: { side: TradePa
         ))}
       </div>
       <p className="text-[10px] text-[var(--text-muted)] mt-1.5 font-mono">
-        Total: {side.total_value}
+        Total: {Math.round((side.total_value ?? 0) * 10) / 10}
       </p>
     </div>
   );
@@ -142,6 +143,77 @@ export function FindTradeModal({ playerId, playerName, open, onOpenChange }: Fin
   }, [open, playerId, fetchOpportunities]);
 
   const [proposing, setProposing] = useState<number | null>(null);
+  const [sweetening, setSweetening] = useState<number | null>(null);
+
+  const handleSweeten = async (opp: TradeOpportunity) => {
+    if (!result?.player) return;
+    setSweetening(opp.team.id);
+    try {
+      const res = await fetch('/api/trades/sweeten', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          team_id: opp.team.id,
+          player_id: result.player.id,
+          current_offer_player_ids: opp.they_send.players.map((p) => p.id),
+          current_offer_pick_ids: opp.they_send.picks.map((p) => p.id),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.error || 'Failed to request sweetener');
+        return;
+      }
+      if (data.sweetened) {
+        toast.success(data.message);
+        // Update the opportunity in-place instead of re-fetching
+        setResult((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev };
+          updated.opportunities = prev.opportunities.map((o) => {
+            if (o.team.id !== opp.team.id) return o;
+            const newOpp = { ...o, they_send: { ...o.they_send } };
+            // Add sweetened player or pick to their side
+            if (data.type === 'added_player' && data.added_player) {
+              newOpp.they_send = {
+                ...newOpp.they_send,
+                players: [...newOpp.they_send.players, {
+                  id: data.added_player.id,
+                  name: data.added_player.name,
+                  position: data.added_player.position,
+                  overall_rating: data.added_player.overall_rating,
+                  age: data.added_player.age,
+                  is_selected: false,
+                  fills_need: false,
+                }],
+                total_value: data.new_total_value ?? newOpp.they_send.total_value,
+              };
+            } else if (data.type === 'added_pick' && data.added_pick) {
+              newOpp.they_send = {
+                ...newOpp.they_send,
+                picks: [...newOpp.they_send.picks, {
+                  id: data.added_pick.id,
+                  label: data.added_pick.label,
+                  round: data.added_pick.round,
+                  trade_value: data.added_pick.trade_value,
+                }],
+                total_value: data.new_total_value ?? newOpp.they_send.total_value,
+              };
+            }
+            return newOpp;
+          });
+          return updated;
+        });
+      } else {
+        toast.info(data.reason || "They can't improve this offer.");
+      }
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setSweetening(null);
+    }
+  };
 
   const handleProposeTrade = async (opp: TradeOpportunity) => {
     if (!result?.player) return;
@@ -157,26 +229,31 @@ export function FindTradeModal({ playerId, playerName, open, onOpenChange }: Fin
           offering_pick_ids: opp.you_send.picks.map((p) => p.id),
           requesting_player_ids: opp.they_send.players.map((p) => p.id),
           requesting_pick_ids: opp.they_send.picks.map((p) => p.id),
+          pre_agreed: true,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data?.error || 'Trade proposal failed');
+        toast.error(data?.error || 'Trade proposal failed');
         return;
       }
-      const tradeResult = data?.data?.trade;
-      if (tradeResult?.status === 'accepted') {
-        onOpenChange(false);
-        navigate('/trades');
-        alert('Trade accepted! Players have been swapped.');
+      const tradeResult = data?.trade ?? data?.data?.trade;
+      onOpenChange(false);
+      if (tradeResult?.status === 'completed' || tradeResult?.status === 'accepted') {
+        toast.success(tradeResult.message || 'Trade accepted! Players have been swapped.', { duration: 5000 });
+        navigate('/my-team');
       } else if (tradeResult?.status === 'rejected') {
-        alert('Trade rejected by the other team.');
-      } else {
-        onOpenChange(false);
+        toast.error(tradeResult.message || 'Trade rejected by the other team.');
+      } else if (tradeResult?.status === 'counter') {
+        toast.info(tradeResult.message || 'The other team wants to counter-offer.');
         navigate('/trades');
+      } else {
+        // Fallback — trade likely succeeded
+        toast.success('Trade complete!', { duration: 5000 });
+        navigate('/my-team');
       }
     } catch (err) {
-      alert('Network error proposing trade');
+      toast.error('Network error proposing trade');
     } finally {
       setProposing(null);
     }
@@ -191,11 +268,11 @@ export function FindTradeModal({ playerId, playerName, open, onOpenChange }: Fin
           </DialogTitle>
           <DialogDescription>
             {status === 'loading'
-              ? 'Scanning the league for trade partners...'
+              ? 'Scanning the league for interested teams...'
               : status === 'error'
                 ? 'Something went wrong.'
                 : status === 'success'
-                  ? 'Trade opportunities found.'
+                  ? 'These teams are interested in making a deal.'
                   : 'Preparing search...'}
           </DialogDescription>
         </DialogHeader>
@@ -334,24 +411,36 @@ export function FindTradeModal({ playerId, playerName, open, onOpenChange }: Fin
                         />
                       </div>
 
-                      {/* GM note */}
+                      {/* GM Analysis */}
                       {opp.gm_note && (
-                        <p className="text-xs italic text-[var(--text-muted)] border-t border-[var(--border)] pt-2">
-                          &ldquo;{opp.gm_note}&rdquo;
-                        </p>
+                        <div className="border-t border-[var(--border)] pt-2 space-y-1">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-gold)]">Your GM&apos;s Take</p>
+                          <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
+                            {opp.gm_note}
+                          </p>
+                        </div>
                       )}
 
                       {/* Footer */}
                       <div className="flex items-center justify-between pt-1">
                         <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                          <span>{opp.reason}</span>
+                          <span>Their interest: {opp.reason}</span>
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="text-xs font-mono text-[var(--text-muted)]">
                             {Math.round(opp.fairness * 100)}% fair
                           </span>
-                          <Button size="sm" onClick={() => handleProposeTrade(opp)} disabled={proposing === opp.team.id}>
-                            {proposing === opp.team.id ? 'Proposing...' : 'Propose →'}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSweeten(opp)}
+                            disabled={sweetening === opp.team.id}
+                            className="text-xs"
+                          >
+                            {sweetening === opp.team.id ? 'Asking...' : 'Sweeten the Deal'}
+                          </Button>
+                          <Button size="sm" onClick={() => handleProposeTrade(opp)} disabled={proposing === opp.team.id} className="bg-green-600 hover:bg-green-700">
+                            {proposing === opp.team.id ? 'Processing...' : 'Accept Trade'}
                           </Button>
                         </div>
                       </div>

@@ -205,79 +205,198 @@ class MaddenRosterImporter
     // When importing from Madden CSV, these convert EA's names to our original names.
     private const EDGE_NAME_MAP = [
         // QB
-        'Bazooka' => 'Cannon Arm', 'Fearless' => 'Pocket Poise', 'Roaming Deadeye' => 'Moving Target',
-        'Fastbreak' => 'Quick Strike', 'Omaha' => 'Signal Caller', 'Truzz' => 'Iron Will',
-        'Pass Lead Elite' => 'Precision Aim',
+        'Bazooka'            => 'Cannon Arm',
+        'Fearless'           => 'Pocket Poise',
+        'Truzz'              => 'Iron Will',
+        'Pass Lead Elite'    => 'Precision Aim',
+        'Dual Threat'        => 'Two-Way Weapon',
+        'Lofting Deadeye'    => 'Touch Passer',
+        'Run & Gun'          => 'Gunfire',
+        'Gutsy Scrambler'    => 'Scramble Sense',
+        'Escape Artist'      => 'Pocket Escape',
+        'Phenom'             => 'Prodigy',
         // RB/FB
-        'First One Free' => 'Clean Break', 'Freight Train' => 'Locomotive',
-        'Ankle Breaker' => 'Ankle Snap', 'Wrecking Ball' => 'Battering Ram',
+        'First One Free'     => 'Clean Break',
+        'Freight Train'      => 'Locomotive',
+        'Ankle Breaker'      => 'Ankle Snap',
+        'Wrecking Ball'      => 'Battering Ram',
+        'Bruiser'            => 'Punisher',
+        'Juke Box'           => 'Hip Shake',
+        'Speedster'          => 'Burner',
+        'Ironman'            => 'Workhorse',
+        'Momentum Shift'     => 'Turning Point',
         // WR
-        'Double Me' => 'Uncoverable', 'RAC Em Up' => 'After the Catch',
-        'Matchup Nightmare' => 'Mismatch', 'YAC Attack' => 'Yards After Contact',
+        'Double Me'          => 'Uncoverable',
+        'Matchup Nightmare'  => 'Mismatch',
+        'Route Technician'   => 'Route Surgeon',
+        'Deep In Elite'      => 'Deep Post',
+        'Deep Out Elite'     => 'Deep Corner',
+        'Mid In Elite'       => 'Crossing Expert',
+        'Mid Out Elite'      => 'Comeback King',
+        'Short In Elite'     => 'Slant Specialist',
+        'Short Out Elite'    => 'Out Route Pro',
+        'Deep Route KO'      => 'Deep Neutralizer',
+        'Mid Zone KO'        => 'Zone Buster',
+        'Short Route KO'     => 'Short Circuit',
+        'Slot-O-Matic'       => 'Slot Machine',
+        'Natural Talent'     => 'Raw Ability',
+        "RAC 'em Up"         => 'After the Catch',
+        "RAC \xe2\x80\x98em Up" => 'After the Catch',
+        "YAC 'Em Up"         => 'Yards After Contact',
+        "YAC \xe2\x80\x98Em Up" => 'Yards After Contact',
+        'Reach For It'       => 'Extra Effort',
+        'Reach Elite'        => 'Extension Play',
         // TE
-        'Slot-O-Matic' => 'Slot Machine',
+        'B.O.G.O.'           => 'Two-for-One',
         // OL
-        'Pancaker' => 'Flattener', 'Post Up' => 'Brick Wall',
-        'Anchor Elite' => 'Immovable', 'All Day' => 'Marathon',
+        'Post Up'            => 'Brick Wall',
+        'All Day'            => 'Marathon',
+        'Edge Protector'     => 'Edge Seal',
+        'Secure Protector'   => 'Sure Hands',
+        'Puller Elite'       => 'Road Grader',
+        'Anchored Extender'  => 'Play Extender',
+        'Linchpin'           => 'Anchor Point',
+        'El Toro'            => 'Bull Rush',
+        'Runoff Elite'       => 'Drive Finisher',
+        'Screen Protector'   => 'Screen Shield',
         // DL
-        'Fearmonger' => 'Terror', 'Unstoppable Force' => 'Juggernaut',
-        'Run Stuffer' => 'Gap Plugger', 'Edge Threat Elite' => 'Relentless',
+        'Fearmonger'         => 'Terror',
+        'Unstoppable Force'  => 'Juggernaut',
+        'Edge Threat'        => 'Speed Rush',
+        'Inside Stuff'       => 'Interior Pressure',
+        'Under Pressure'     => 'Closer',
+        'Swim Club'          => 'Swim Artist',
+        'Run Stopper'        => 'Gap Plugger',
+        'Nasty Streak'       => 'Mean Streak',
+        'Demoralizer'        => 'Spirit Breaker',
+        'Bottleneck'         => 'Lane Clogger',
+        'Tackle Supreme'     => 'Sure Tackler',
+        'Out My Way'         => 'Pancake Artist',
         // LB
-        'Reinforcement' => 'Cavalry', 'Shutdown' => 'Lockdown', 'Blitz' => 'Heat Seeker',
+        'Reinforcement'      => 'Cavalry',
+        'Shutdown'           => 'Lockdown',
+        'Blitz'              => 'Heat Seeker',
+        'Universal Coverage'  => 'Blanket Coverage',
+        'Enforcer'           => 'Hard Hitter',
+        'Relentless'         => 'Fourth Quarter',
+        'Pick Artist'        => 'Ball Hawk',
+        'On The Ball'        => 'Instinctive',
         // CB
-        'Pick Artist' => 'Ball Hawk', 'Acrobat' => 'High Wire',
+        'Acrobat'            => 'High Wire',
+        'No Outsiders'       => 'Boundary Lock',
+        'Inside Shade'       => 'Inside Leverage',
+        'Outside Shade'      => 'Outside Leverage',
+        'Max Security'       => 'Blanket Shadow',
         // S
-        'Zone Hawk' => 'Zone Ghost',
+        'Fool Me Once'       => 'Pattern Reader',
         // K/P
-        'Ice In Veins' => 'Cold Blooded', 'Coffin Corner' => 'Pin Drop',
-        'Superstar' => 'Standout',
+        'Zen Kicker'         => 'Ice Water',
+        'Arm Bar'            => 'Stiff Arm Pro',
     ];
 
     private const INSTINCT_NAME_MAP = [
         // QB
-        'Dashing Deadeye' => 'Run-Pass Read', 'Gutsy Scrambler' => 'Scramble Sense',
-        'Pocket Deadeye' => 'Pocket Precision', 'Set Feet Lead' => 'Plant & Fire',
-        'Sideline Deadeye' => 'Boundary Accuracy', 'Escape Artist' => 'Pocket Escape',
-        'Hot Route Master' => 'Audible Expert', 'Protected' => 'Quick Release',
-        'Gunslinger' => 'Rocket Arm', 'Last Ditch' => 'Hail Mary',
-        'No Look Deadeye' => 'No-Look Pass', 'Anchored Extender' => 'Play Extender',
+        'Dashing Deadeye'    => 'Run-Pass Read',
+        'Gutsy Scrambler'    => 'Scramble Sense',
+        'Set Feet Lead'      => 'Plant & Fire',
+        'Sideline Deadeye'   => 'Boundary Accuracy',
+        'Gunslinger'         => 'Rocket Arm',
+        'No-Look Deadeye'    => 'No-Look Pass',
+        'Anchored Extender'  => 'Play Extender',
+        'Pass Lead Elite'    => 'Precision Aim',
+        'Inside Deadeye'     => 'Interior Accuracy',
+        'High Point Deadeye' => 'Skyball Accuracy',
+        'Red Zone Deadeye'   => 'Goal Line Precision',
+        'Roaming Deadeye'    => 'Moving Target',
+        'Fearless'           => 'Pocket Poise',
+        'Omniscient'         => 'Field Vision',
+        'Playmaker'          => 'Play Designer',
+        'Unpredictable'      => 'Wildcard',
         // RB/FB
-        'Arm Bar' => 'Stiff Arm Pro', 'Backfield Mismatch' => 'Receiving Threat',
-        'Bulldozer' => 'Pile Driver', 'Evasive' => 'Ghost Runner',
-        'Juke Box' => 'Hip Shake', 'Spin Cycle' => 'Tornado',
-        'Bruiser' => 'Punisher', 'Reach For It' => 'Extra Effort',
-        // WR
-        'Acrobat' => 'High Wire', 'Deep In Elite' => 'Deep Post',
-        'Deep Out Elite' => 'Deep Corner', 'Grab-N-Go' => 'Snag & Go',
-        'Mid In Elite' => 'Crossing Expert', 'Mid Out Elite' => 'Comeback King',
-        'RAC Em Up' => 'After the Catch', 'Route Technician' => 'Route Surgeon',
-        'Short In Elite' => 'Slant Specialist', 'Short Out Elite' => 'Out Route Pro',
-        'Slot-O-Matic' => 'Slot Machine', 'Deep Route Specialist' => 'Burner',
-        // TE
-        'Matchup Nightmare' => 'Mismatch', 'Nasty Streak' => 'Mean Streak',
+        'Arm Bar'            => 'Stiff Arm Pro',
+        'Backfield Mismatch' => 'Receiving Threat',
+        'Evasive'            => 'Ghost Runner',
+        'Juke Box'           => 'Hip Shake',
+        'Bruiser'            => 'Punisher',
+        'Reach For It'       => 'Extra Effort',
+        'Human Joystick'     => 'Wiggle',
+        'Speedster'          => 'Burner',
+        'Leap Frog'          => 'Hurdler',
+        'Goal Line Back'     => 'Short Yardage',
+        'Fastbreak'          => 'Quick Strike',
+        'Energizer'          => 'Second Wind',
+        'Extra Credit'       => 'Bonus Yards',
+        // WR/TE
+        'Acrobat'            => 'High Wire',
+        'Deep In Elite'      => 'Deep Post',
+        'Deep Out Elite'     => 'Deep Corner',
+        'Mid In Elite'       => 'Crossing Expert',
+        'Mid Out Elite'      => 'Comeback King',
+        'Short In Elite'     => 'Slant Specialist',
+        'Short Out Elite'    => 'Out Route Pro',
+        'Route Technician'   => 'Route Surgeon',
+        'Matchup Nightmare'  => 'Mismatch',
+        'Nasty Streak'       => 'Mean Streak',
+        'Deep Route KO'      => 'Deep Neutralizer',
+        'Mid Zone KO'        => 'Zone Buster',
+        'Short Route KO'     => 'Short Circuit',
+        'Deep In Zone KO'    => 'Deep Interior Breaker',
+        'Deep Out Zone KO'   => 'Deep Boundary Breaker',
+        'Flat Zone KO'       => 'Flat Buster',
+        'Natural Talent'     => 'Raw Ability',
+        'B.O.G.O.'           => 'Two-for-One',
+        'Tight Out'          => 'Seam Stretcher',
+        'Reach Elite'        => 'Extension Play',
+        '3rd Down Threat'    => 'Chain Mover',
+        'Red Zone Threat'    => 'Scoring Threat',
         // OL
-        'Post Up' => 'Brick Wall', 'Secure Protector' => 'Sure Hands',
-        'Edge Protector' => 'Edge Seal', 'All Day' => 'Marathon',
-        'Puller Elite' => 'Road Grader', 'Identifier' => 'Field General',
+        'Post Up'            => 'Brick Wall',
+        'Secure Protector'   => 'Sure Hands',
+        'Edge Protector'     => 'Edge Seal',
+        'All Day'            => 'Marathon',
+        'Puller Elite'       => 'Road Grader',
+        'El Toro'            => 'Bull Rush',
+        'Runoff Elite'       => 'Drive Finisher',
+        'Steamroller'        => 'Flattener',
+        'Run Protector'      => 'Run Lane Guard',
+        'Lumberjack'         => 'Timber Block',
         // DL
-        'Edge Threat' => 'Speed Rush', 'Inside Stuff' => 'Interior Pressure',
-        'Under Pressure' => 'Closer', 'Adrenaline Rush' => 'Fourth Quarter',
-        'Swim Move Elite' => 'Swim Artist', 'Bull Rush Elite' => 'Power Drive',
-        'Run Stuffer' => 'Gap Plugger',
+        'Edge Threat'        => 'Speed Rush',
+        'Edge Threat Elite'  => 'Relentless Rush',
+        'Inside Stuff'       => 'Interior Pressure',
+        'Under Pressure'     => 'Closer',
+        'Swim Club'          => 'Swim Artist',
+        'Run Stopper'        => 'Gap Plugger',
+        'Interior Threat'    => 'Inside Havoc',
+        'Demoralizer'        => 'Spirit Breaker',
+        'Tackle Supreme'     => 'Sure Tackler',
+        'Out My Way'         => 'Pancake Artist',
+        'Deflator'           => 'Pass Deflector',
+        'Extra Pop'          => 'Knockout Blow',
+        'Tank'               => 'Immovable Object',
         // LB
-        'Enforcer' => 'Hard Hitter', 'Lurker' => 'Zone Reader',
-        'Universal Coverage' => 'Blanket Coverage', 'Blitz' => 'Heat Seeker',
-        'Strip Specialist' => 'Ball Stripper', 'Outmatched' => 'Overpowered',
-        'Fill the Gap' => 'Downhill',
+        'Enforcer Supreme'   => 'Enforcer Elite',
+        'Lurk Artist'        => 'Zone Reader',
+        'Universal Coverage'  => 'Blanket Coverage',
+        'Blitz'              => 'Heat Seeker',
+        'Strip Specialist'   => 'Ball Stripper',
+        'Outmatched'         => 'Overpowered',
+        'Form Tackler'       => 'Textbook Tackler',
+        'Secure Tackler'     => 'Wrap-Up Artist',
+        'Goal Line Stuff'    => 'Goal Line Wall',
+        'Recuperation'       => 'Quick Recovery',
+        'Backlash'           => 'Counter Strike',
         // CB
-        'One Step Ahead' => 'Mirror Step', 'Pick Artist' => 'Ball Hawk',
-        'Bench Press' => 'Press Master', 'Mid Zone KO' => 'Zone Buster',
-        'Deep Zone KO' => 'Deep Patrol',
-        // S
-        'In The Zone' => 'Sixth Sense',
-        // K/P
-        'Focused Kicker' => 'Tunnel Vision', 'Clutch' => 'Ice Water',
-        'Coffin Corner' => 'Pin Drop', 'Superstar' => 'Standout',
+        'One Step Ahead'     => 'Mirror Step',
+        'Pick Artist'        => 'Ball Hawk',
+        'Bench Press'        => 'Press Master',
+        'Inside Shade'       => 'Inside Leverage',
+        'Outside Shade'      => 'Outside Leverage',
+        'Fool Me Once'       => 'Pattern Reader',
+        'No Outsiders'       => 'Boundary Lock',
+        'Tip Drill'          => 'Deflection Drill',
+        'Unfakeable'         => 'Eyes Discipline',
+        'Instant Rebate'     => 'Quick Turnover',
     ];
 
     // ─── Depth chart starter slots (same as installer step 3) ──────────
@@ -745,6 +864,12 @@ class MaddenRosterImporter
     {
         $teamIds = array_values($teamMap);
 
+        // Disable foreign key checks for the duration of the clear
+        $isSqlite = Connection::getInstance()->isSqlite();
+        if ($isSqlite) {
+            $this->db->exec("PRAGMA foreign_keys = OFF");
+        }
+
         if (!empty($teamIds)) {
             $placeholders = implode(',', array_fill(0, count($teamIds), '?'));
 
@@ -754,10 +879,34 @@ class MaddenRosterImporter
             )->execute($teamIds);
         }
 
+        // Delete dependent records that reference players in this league
+        $this->db->prepare(
+            "DELETE FROM free_agents WHERE player_id IN (SELECT id FROM players WHERE league_id = ?)"
+        )->execute([$leagueId]);
+        $this->db->prepare(
+            "DELETE FROM contracts WHERE player_id IN (SELECT id FROM players WHERE league_id = ?)"
+        )->execute([$leagueId]);
+        $this->db->prepare(
+            "DELETE FROM game_stats WHERE player_id IN (SELECT id FROM players WHERE league_id = ?)"
+        )->execute([$leagueId]);
+        $this->db->prepare(
+            "DELETE FROM injuries WHERE player_id IN (SELECT id FROM players WHERE league_id = ?)"
+        )->execute([$leagueId]);
+        $this->db->prepare(
+            "DELETE FROM trade_items WHERE player_id IN (SELECT id FROM players WHERE league_id = ?)"
+        )->execute([$leagueId]);
+        $this->db->prepare(
+            "DELETE FROM trade_block WHERE player_id IN (SELECT id FROM players WHERE league_id = ?)"
+        )->execute([$leagueId]);
+
         // Delete ALL players for this league (including free agents)
         $this->db->prepare(
             "DELETE FROM players WHERE league_id = ?"
         )->execute([$leagueId]);
+
+        if ($isSqlite) {
+            $this->db->exec("PRAGMA foreign_keys = ON");
+        }
     }
 
     /**

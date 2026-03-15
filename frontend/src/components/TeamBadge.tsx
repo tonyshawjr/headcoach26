@@ -32,8 +32,9 @@ export function TeamBadge({
     <div
       className={`inline-flex shrink-0 items-center justify-center rounded font-bold uppercase leading-none tracking-tight ${box} ${className}`}
       style={{
-        backgroundColor: primaryColor,
-        color: secondaryColor,
+        background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor ?? primaryColor})`,
+        color: '#FFFFFF',
+        textShadow: '0 1px 2px rgba(0,0,0,0.4)',
         boxShadow: `0 0 0 1px ${primaryColor}40`,
       }}
     >

@@ -1,19 +1,14 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { usePlayer, usePlayerStats, usePlayerGameLog } from '@/hooks/useApi';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { usePlayer, usePlayerStats, usePlayerGameLog, useContractStatus } from '@/hooks/useApi';
+import { useQueryClient } from '@tanstack/react-query';
+import { playerApi } from '@/api/client';
+import type { ContractStatusResponse, ExtensionOfferResponse } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FindTradeModal } from '@/components/FindTradeModal';
-import { Separator } from '@/components/ui/separator';
-import {
-  formatStatName, formatHeight, ratingColor, ratingBgColor, CATEGORY_LABELS,
-} from '@/lib/formatters';
-import {
-  ArrowLeft, Heart, Brain, TrendingUp, Shield, Zap, Star, Activity,
-  ChevronRight, Award, Dumbbell, Target, Eye,
-} from 'lucide-react';
+// FindTradeModal replaced by full-page TradeCenter at /trade/find/:playerId
+import { PlayerComparison } from '@/components/PlayerComparison';
+import { formatStatName, formatHeight, CATEGORY_LABELS } from '@/lib/formatters';
+import { Heart, Zap, Star, Activity, FileText, DollarSign, X, Check, MessageSquare } from 'lucide-react';
 
 // --- Types ---
 
@@ -25,10 +20,10 @@ interface PlayerData {
   age: number;
   overall_rating: number;
   jersey_number: number;
+  image_url?: string | null;
   height?: number;
   weight?: number;
   handedness?: string;
-  birthdate?: string;
   years_pro?: number;
   college?: string;
   archetype?: string;
@@ -52,47 +47,126 @@ type RatingsMap = Record<string, Record<string, number>>;
 
 interface PlayerDetailResponse {
   player: PlayerData;
-  team: { id: number; city: string; name: string; abbreviation: string; primary_color: string } | null;
-  contract: { years_remaining: number; salary: number } | null;
-  injury: { type: string; severity: string; weeks_remaining: number } | null;
+  team?: { id: number; city: string; name: string; abbreviation: string; primary_color: string; secondary_color: string };
+  contract?: { salary_annual: number; salary?: number; cap_hit?: number; years_remaining: number; years_total?: number; signing_bonus?: number; total_value?: number; status?: string };
+  injury?: { type: string; severity: string; weeks_remaining: number };
   ratings?: RatingsMap;
   free_agent?: { free_agent_id: number; market_value: number; asking_salary: number } | null;
 }
 
 interface StatsResponse {
+  position: string;
   season: Record<string, number> | null;
+  season_year: number | null;
   career: Record<string, number> | null;
+  career_by_year: (Record<string, number> & { season_year: number })[] | null;
 }
 
-interface GameLogResponse {
-  games: Array<{
-    week: number; opponent: string; result: string; score: string;
-    stats: Record<string, number>;
-  }>;
+interface GameLogEntry {
+  week: number;
+  opponent: string;
+  location: string;
+  result: string;
+  score: string;
+  pass_attempts?: number;
+  pass_completions?: number;
+  pass_yards?: number;
+  pass_tds?: number;
+  interceptions?: number;
+  rush_attempts?: number;
+  rush_yards?: number;
+  rush_tds?: number;
+  targets?: number;
+  receptions?: number;
+  rec_yards?: number;
+  rec_tds?: number;
+  tackles?: number;
+  sacks?: number;
+  interceptions_def?: number;
+  forced_fumbles?: number;
+  fg_attempts?: number;
+  fg_made?: number;
+  grade?: string;
+  [key: string]: unknown;
+}
+
+// --- Stat column configs by position ---
+
+const QB_STATS: [string, string][] = [
+  ['pass_completions', 'CMP'], ['pass_attempts', 'ATT'], ['comp_pct', 'CMP%'],
+  ['pass_yards', 'YDS'], ['pass_tds', 'TD'], ['interceptions', 'INT'],
+  ['passer_rating', 'RTG'], ['yards_per_attempt', 'Y/A'],
+  ['rush_attempts', 'CAR'], ['rush_yards', 'RUSH'], ['rush_tds', 'RTDS'],
+];
+const RB_STATS: [string, string][] = [
+  ['rush_attempts', 'CAR'], ['rush_yards', 'YDS'], ['rush_tds', 'TD'], ['yards_per_carry', 'Y/C'],
+  ['receptions', 'REC'], ['rec_yards', 'REC YDS'], ['rec_tds', 'REC TD'],
+];
+const WR_TE_STATS: [string, string][] = [
+  ['targets', 'TGT'], ['receptions', 'REC'], ['rec_yards', 'YDS'], ['rec_tds', 'TD'],
+  ['yards_per_catch', 'Y/R'], ['catch_pct', 'CTH%'],
+  ['rush_attempts', 'CAR'], ['rush_yards', 'RUSH'],
+];
+const DEF_STATS: [string, string][] = [
+  ['tackles', 'TKL'], ['sacks', 'SCK'], ['interceptions_def', 'INT'], ['forced_fumbles', 'FF'],
+];
+const K_STATS: [string, string][] = [
+  ['fg_made', 'FGM'], ['fg_attempts', 'FGA'], ['fg_pct', 'FG%'],
+];
+
+const QB_GAME_COLS: [string, string][] = [
+  ['pass_completions', 'CMP'], ['pass_attempts', 'ATT'], ['pass_yards', 'YDS'],
+  ['pass_tds', 'TD'], ['interceptions', 'INT'], ['rush_attempts', 'CAR'], ['rush_yards', 'RUSH'],
+];
+const RB_GAME_COLS: [string, string][] = [
+  ['rush_attempts', 'CAR'], ['rush_yards', 'YDS'], ['rush_tds', 'TD'],
+  ['receptions', 'REC'], ['rec_yards', 'REC YDS'], ['rec_tds', 'REC TD'],
+];
+const WR_TE_GAME_COLS: [string, string][] = [
+  ['targets', 'TGT'], ['receptions', 'REC'], ['rec_yards', 'YDS'], ['rec_tds', 'TD'],
+  ['rush_attempts', 'CAR'], ['rush_yards', 'RUSH'],
+];
+const DEF_GAME_COLS: [string, string][] = [
+  ['tackles', 'TKL'], ['sacks', 'SCK'], ['interceptions_def', 'INT'], ['forced_fumbles', 'FF'],
+];
+const K_GAME_COLS: [string, string][] = [['fg_made', 'FGM'], ['fg_attempts', 'FGA']];
+
+function getStatsForPosition(pos: string): [string, string][] {
+  if (pos === 'QB') return QB_STATS;
+  if (pos === 'RB' || pos === 'FB') return RB_STATS;
+  if (pos === 'WR' || pos === 'TE') return WR_TE_STATS;
+  if (['DE', 'DT', 'LB', 'CB', 'S'].includes(pos)) return DEF_STATS;
+  if (pos === 'K' || pos === 'P') return K_STATS;
+  return QB_STATS;
+}
+
+function getGameColsForPosition(pos: string): [string, string][] {
+  if (pos === 'QB') return QB_GAME_COLS;
+  if (pos === 'RB' || pos === 'FB') return RB_GAME_COLS;
+  if (pos === 'WR' || pos === 'TE') return WR_TE_GAME_COLS;
+  if (['DE', 'DT', 'LB', 'CB', 'S'].includes(pos)) return DEF_GAME_COLS;
+  if (pos === 'K' || pos === 'P') return K_GAME_COLS;
+  return QB_GAME_COLS;
+}
+
+function computeGamePasserRating(g: GameLogEntry): string {
+  const att = Number(g.pass_attempts) || 0;
+  if (att === 0) return '—';
+  const comp = Number(g.pass_completions) || 0;
+  const yds = Number(g.pass_yards) || 0;
+  const td = Number(g.pass_tds) || 0;
+  const int_ = Number(g.interceptions) || 0;
+  const a = Math.max(0, Math.min(2.375, ((comp / att) - 0.3) * 5));
+  const b = Math.max(0, Math.min(2.375, ((yds / att) - 3) * 0.25));
+  const c = Math.max(0, Math.min(2.375, (td / att) * 20));
+  const d = Math.max(0, Math.min(2.375, 2.375 - ((int_ / att) * 25)));
+  return (((a + b + c + d) / 6) * 100).toFixed(1);
 }
 
 // --- Helpers ---
 
-function overallBorderColor(rating: number): string {
-  if (rating >= 90) return 'border-green-500';
-  if (rating >= 80) return 'border-blue-500';
-  if (rating >= 70) return 'border-yellow-500';
-  return 'border-red-500';
-}
-
-function overallTextColor(rating: number): string {
-  if (rating >= 90) return 'text-green-400';
-  if (rating >= 80) return 'text-blue-400';
-  if (rating >= 70) return 'text-yellow-400';
-  return 'text-red-400';
-}
-
-function ratingBarColor(rating: number): string {
-  if (rating >= 90) return 'bg-green-500';
-  if (rating >= 80) return 'bg-green-600';
-  if (rating >= 70) return 'bg-yellow-500';
-  if (rating >= 50) return 'bg-orange-500';
-  return 'bg-red-500';
+function formatLabel(value: string): string {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function formatSalary(salary: number): string {
@@ -101,101 +175,38 @@ function formatSalary(salary: number): string {
   return `$${salary}`;
 }
 
-/** Capitalize a snake_case or lowercase string for display (e.g. "team_player" → "Team Player") */
-function formatLabel(value: string): string {
-  return value
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+function formatInjuryType(type: string): string {
+  return formatLabel(type);
 }
 
-/** Morale color based on the string value */
-function moraleColor(morale: string): string {
-  const m = morale.toLowerCase();
-  if (m === 'ecstatic') return 'text-green-400';
-  if (m === 'happy') return 'text-blue-400';
-  if (m === 'content') return 'text-yellow-400';
-  if (m === 'frustrated') return 'text-orange-400';
-  return 'text-red-400'; // angry
-}
-
-function moraleBgColor(morale: string): string {
-  const m = morale.toLowerCase();
-  if (m === 'ecstatic') return 'bg-green-500';
-  if (m === 'happy') return 'bg-blue-500';
-  if (m === 'content') return 'bg-yellow-500';
-  if (m === 'frustrated') return 'bg-orange-500';
-  return 'bg-red-500';
-}
-
-function moralePercent(morale: string): number {
-  const m = morale.toLowerCase();
-  if (m === 'ecstatic') return 100;
-  if (m === 'happy') return 75;
-  if (m === 'content') return 50;
-  if (m === 'frustrated') return 25;
-  return 10; // angry
-}
-
-function getMoraleDescription(morale: string, firstName: string): string {
-  const m = morale.toLowerCase();
-  const label = formatLabel(morale);
-  if (m === 'ecstatic') return `${firstName} is **${label}** — morale is boosting his overall performance.`;
-  if (m === 'happy') return `${firstName} is **${label}** — morale is positively impacting his play.`;
-  if (m === 'content') return `${firstName} is **${label}** — morale is not currently impacting his overall.`;
-  if (m === 'frustrated') return `${firstName} is **${label}** — morale is negatively affecting his performance.`;
-  return `${firstName} is **${label}** — morale is severely hurting his overall rating.`;
+function formatInjurySeverity(severity: string): string {
+  const map: Record<string, string> = {
+    day_to_day: 'Day-to-Day', short_term: 'Short-Term',
+    long_term: 'Long-Term', season_ending: 'Season-Ending',
+  };
+  return map[severity] ?? formatLabel(severity);
 }
 
 function getDevelopmentLabel(potential?: string): string {
   if (!potential) return 'Average';
   const map: Record<string, string> = {
-    'elite': 'Elite',
-    'high': 'High',
-    'average': 'Average',
-    'limited': 'Limited',
-    // Legacy values (pre-rename)
-    'superstar': 'Elite',
-    'star': 'High',
-    'normal': 'Average',
-    'slow': 'Limited',
+    elite: 'Elite', high: 'High', average: 'Average', limited: 'Limited',
+    superstar: 'Elite', star: 'High', normal: 'Average', slow: 'Limited',
   };
   return map[potential.toLowerCase()] ?? formatLabel(potential);
 }
 
-// --- Madden-style Rating Number ---
+// --- Tabs ---
 
-function RatingNumber({ label, value, size = 'normal' }: { label: string; value: number; size?: 'normal' | 'large' }) {
-  const textSize = size === 'large' ? 'text-5xl' : 'text-4xl';
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-        {label}
-      </span>
-      <span className={`font-display ${textSize} leading-none ${ratingColor(value)}`}>
-        {value}
-      </span>
-      <div className="mt-0.5 h-[3px] w-full overflow-hidden rounded-full bg-white/10">
-        <div
-          className={`h-full rounded-full transition-all ${ratingBarColor(value)}`}
-          style={{ width: `${value}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-// --- Inline Markdown Bold ---
-
-function BoldText({ text }: { text: string }) {
-  const parts = text.split(/\*\*(.*?)\*\*/g);
-  return (
-    <span>
-      {parts.map((part, i) =>
-        i % 2 === 1 ? <strong key={i} className="font-bold text-[var(--text-primary)]">{part}</strong> : part
-      )}
-    </span>
-  );
-}
+const TABS = [
+  { key: 'ratings', label: 'Ratings' },
+  { key: 'scout', label: 'Scout Report' },
+  { key: 'stats', label: 'Stats' },
+  { key: 'gamelog', label: 'Game Log' },
+  { key: 'awards', label: 'Awards' },
+  { key: 'health', label: 'Health' },
+  { key: 'traits', label: 'Traits' },
+];
 
 // --- Main Component ---
 
@@ -205,16 +216,23 @@ export default function PlayerProfile() {
   const { data: rawData, isLoading } = usePlayer(Number(id));
   const { data: rawStats } = usePlayerStats(Number(id));
   const { data: rawGameLog } = usePlayerGameLog(Number(id));
-  const [tradeModalOpen, setTradeModalOpen] = useState(false);
+  const { data: contractStatusRaw } = useContractStatus(Number(id));
+  const contractStatus = contractStatusRaw as unknown as ContractStatusResponse | undefined;
+  const queryClient = useQueryClient();
+  // Trade navigation
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
   const [signing, setSigning] = useState(false);
+  const [activeTab, setActiveTab] = useState('ratings');
+  const [extensionModalOpen, setExtensionModalOpen] = useState(false);
+  const [extensionSalary, setExtensionSalary] = useState('');
+  const [extensionYears, setExtensionYears] = useState('3');
+  const [extensionSubmitting, setExtensionSubmitting] = useState(false);
+  const [extensionResult, setExtensionResult] = useState<ExtensionOfferResponse | null>(null);
 
   if (isLoading) {
     return (
       <div className="flex h-96 items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent-blue)] border-t-transparent" />
-          <p className="text-sm text-[var(--text-secondary)]">Loading player...</p>
-        </div>
+        <p className="text-[var(--text-secondary)]">Loading player...</p>
       </div>
     );
   }
@@ -226,35 +244,9 @@ export default function PlayerProfile() {
   const injury = detail?.injury;
   const ratings = detail?.ratings;
   const freeAgent = detail?.free_agent;
+  const playerAwards = (detail as any)?.awards as { list: { type: string; label: string; season_year: number; details: Record<string, unknown> }[]; summary: Record<string, number> } | undefined;
   const stats = rawStats as unknown as StatsResponse | undefined;
-  const gameLog = rawGameLog as unknown as GameLogResponse['games'] | undefined;
-
-  async function handleSign() {
-    if (!freeAgent) return;
-    setSigning(true);
-    try {
-      const res = await fetch(`/api/free-agents/${freeAgent.free_agent_id}/bid`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          salary_offer: freeAgent.market_value,
-          years_offer: 1,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data?.error || 'Failed to sign player');
-        return;
-      }
-      alert(`Offer submitted for ${player?.first_name} ${player?.last_name} at ${formatSalary(freeAgent.market_value)}/yr!`);
-      navigate('/free-agency');
-    } catch {
-      alert('Network error');
-    } finally {
-      setSigning(false);
-    }
-  }
+  const gameLog = rawGameLog as unknown as GameLogEntry[] | undefined;
 
   if (!player) {
     return (
@@ -263,6 +255,69 @@ export default function PlayerProfile() {
       </div>
     );
   }
+
+  async function handleSign() {
+    if (!freeAgent) return;
+    setSigning(true);
+    try {
+      const res = await fetch(`/api/free-agents/${freeAgent.free_agent_id}/bid`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ salary_offer: freeAgent.market_value, years_offer: 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data?.error || 'Failed to sign player'); return; }
+      alert(`Offer submitted for ${player?.first_name} ${player?.last_name}!`);
+      navigate('/free-agency');
+    } catch { alert('Network error'); } finally { setSigning(false); }
+  }
+
+  async function handleOfferExtension() {
+    if (!player) return;
+    const salaryNum = parseFloat(extensionSalary) * 1_000_000;
+    const yearsNum = parseInt(extensionYears);
+    if (isNaN(salaryNum) || salaryNum <= 0 || isNaN(yearsNum) || yearsNum <= 0) {
+      alert('Please enter a valid salary and years.');
+      return;
+    }
+    setExtensionSubmitting(true);
+    try {
+      const result = await playerApi.offerExtension(player.id, Math.round(salaryNum), yearsNum);
+      setExtensionResult(result);
+      if (result.result === 'accepted') {
+        queryClient.invalidateQueries({ queryKey: ['player', player.id] });
+        queryClient.invalidateQueries({ queryKey: ['contractStatus', player.id] });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      alert(msg);
+    } finally {
+      setExtensionSubmitting(false);
+    }
+  }
+
+  async function handleAcceptCounter() {
+    if (!player || !extensionResult?.counter_offer) return;
+    setExtensionSubmitting(true);
+    try {
+      const co = extensionResult.counter_offer;
+      const result = await playerApi.offerExtension(player.id, co.salary, co.years);
+      setExtensionResult(result);
+      if (result.result === 'accepted') {
+        queryClient.invalidateQueries({ queryKey: ['player', player.id] });
+        queryClient.invalidateQueries({ queryKey: ['contractStatus', player.id] });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      alert(msg);
+    } finally {
+      setExtensionSubmitting(false);
+    }
+  }
+
+  const isMyPlayer = contractStatus?.is_my_player ?? false;
+  const isEligibleForExtension = contractStatus?.eligible_for_extension ?? false;
+  const showContractCard = contractStatus && contractStatus.contract && isEligibleForExtension;
 
   // Build ratings
   const hasGroupedRatings = ratings && Object.keys(ratings).length > 0;
@@ -280,764 +335,1176 @@ export default function PlayerProfile() {
   }
   const displayRatings = hasGroupedRatings ? ratings : fallbackRatings;
   const ratingCategories = Object.keys(displayRatings);
-
-  // Separate core vs secondary categories
-  const coreCategories = ['physical', 'ball_carrier', 'receiving', 'quarterback'];
-  const secondaryCategories = ratingCategories.filter(c => !coreCategories.includes(c));
-  const primaryCategories = ratingCategories.filter(c => coreCategories.includes(c));
-
   const abilities = player.instincts ?? [];
-
-  // Get position rank text
-  const positionName = CATEGORY_LABELS[player.position_type ?? ''] ?? player.position;
+  const gameCols = getGameColsForPosition(player.position);
+  const isQB = player.position === 'QB';
 
   return (
-    <div className="mx-auto max-w-6xl">
-      {/* Back Button */}
-      <button
-        onClick={() => navigate(-1)}
-        className="mb-4 flex items-center gap-1.5 text-sm text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back
-      </button>
+    <div className="space-y-6 -mt-6">
+      {/* ── ESPN-style Player Header ── */}
+      {(() => {
+        const teamColor = team?.primary_color ?? '#1c2333';
+        const teamColor2 = (team as Record<string, unknown>)?.secondary_color as string ?? teamColor;
+        const hasRealPhoto = player.image_url && (
+          player.image_url.endsWith('.webp') || player.image_url.endsWith('.jpg') ||
+          player.image_url.endsWith('.jpeg') || player.image_url.endsWith('.png')
+        );
+        const posStatCols = getStatsForPosition(player.position).slice(0, 4);
+        const seasonData = stats?.season;
+        const seasonYear = stats?.season_year;
 
-      {/* ===== PLAYER HEADER - Madden Style ===== */}
-      <div className="relative mb-0 overflow-hidden rounded-t-xl bg-gradient-to-br from-[var(--bg-surface)] via-[var(--bg-surface)] to-[var(--bg-elevated)]">
-        {/* Subtle background pattern */}
-        <div className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage: `radial-gradient(circle at 20% 50%, ${team?.primary_color ?? 'var(--accent-blue)'} 0%, transparent 50%)`,
-          }}
-        />
+        return (
+          <div className="-mx-4 sm:-mx-6" style={{ width: '100vw', marginLeft: 'calc(-50vw + 50%)' }}>
+            {/* Top color strip */}
+            <div className="h-1" style={{ backgroundColor: teamColor }} />
 
-        <div className="relative flex flex-col sm:flex-row items-start sm:items-center gap-6 p-6 sm:p-8">
-          {/* Team Color Accent Bar */}
-          <div
-            className="absolute left-0 top-0 bottom-0 w-1.5"
-            style={{ backgroundColor: team?.primary_color ?? 'var(--accent-blue)' }}
-          />
+            {/* Main header area */}
+            <div className="bg-[var(--bg-surface)]">
+              <div className="flex items-stretch" style={{ minHeight: '200px' }}>
+                {/* Headshot area with ESPN-style angled dividers */}
+                <div className="relative shrink-0 w-56 sm:w-72 hidden sm:block overflow-hidden">
+                  {/* Team color gradient background */}
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background: `linear-gradient(135deg, ${teamColor} 0%, ${teamColor2} 100%)`,
+                    }}
+                  />
 
-          {/* Player Identity */}
-          <div className="flex-1 pl-4">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                {player.position} #{player.jersey_number}
-              </span>
-              {team && (
+                  {/* Player image — clipped to box, head near top */}
+                  <div className="absolute inset-0 flex items-end justify-center" style={{ zIndex: 5 }}>
+                    {hasRealPhoto ? (
+                      <img
+                        src={player.image_url!}
+                        alt={`${player.first_name} ${player.last_name}`}
+                        className="h-full w-auto max-w-none object-cover object-top drop-shadow-xl"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center">
+                        <svg viewBox="0 0 80 80" className="h-24 w-24 text-white opacity-25">
+                          <circle cx="40" cy="28" r="14" fill="currentColor" />
+                          <path d="M12 72c0-15.5 12.5-28 28-28s28 12.5 28 28" fill="currentColor" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Angled strips — ON TOP of the player image (higher z-index) */}
+                  {/* Strip 1: thin accent line to the LEFT of player */}
+                  <div
+                    className="absolute -top-2 -bottom-2 left-[15%] w-[6px]"
+                    style={{
+                      background: `rgba(255,255,255,0.15)`,
+                      transform: 'skewX(-8deg)',
+                      zIndex: 8,
+                    }}
+                  />
+
+                  {/* Strip 2: team-colored accent strip (between player and white edge) */}
+                  <div
+                    className="absolute -top-2 -bottom-2 right-[20px] w-[10px]"
+                    style={{
+                      background: `${teamColor}66`,
+                      transform: 'skewX(-8deg)',
+                      boxShadow: '-2px 0 4px rgba(0,0,0,0.1)',
+                      zIndex: 10,
+                    }}
+                  />
+
+                  {/* Strip 3: main white angled edge — overlaps the player */}
+                  <div
+                    className="absolute -top-2 -bottom-2 right-[-8px] w-[35px]"
+                    style={{
+                      background: 'var(--bg-surface)',
+                      transform: 'skewX(-8deg)',
+                      boxShadow: '-4px 0 10px rgba(0,0,0,0.15)',
+                      zIndex: 12,
+                    }}
+                  />
+                </div>
+
+                {/* Name + OVR + Meta */}
+                <div className="flex-1 min-w-0 px-8 py-8 flex flex-col justify-center">
+                  <div className="flex items-start gap-6">
+                    {/* Name block */}
+                    <div className="flex-1 min-w-0">
+                      <h1 className="leading-none">
+                        <span className="block text-xl sm:text-2xl font-normal text-[var(--text-secondary)]">{player.first_name}</span>
+                        <span className="block text-3xl sm:text-5xl font-black text-[var(--text-primary)] uppercase tracking-tight">{player.last_name}</span>
+                      </h1>
+
+                      {/* Team · Number · Position · Potential */}
+                      <div className="flex flex-wrap items-center gap-x-2 mt-3 text-sm text-[var(--text-secondary)]">
+                        {team && (
+                          <Link to={`/team/${team.id}`} className="font-semibold hover:underline" style={{ color: teamColor }}>
+                            {team.city} {team.name}
+                          </Link>
+                        )}
+                        {team && <span className="text-[var(--text-muted)]">&middot;</span>}
+                        <span>#{player.jersey_number}</span>
+                        <span className="text-[var(--text-muted)]">&middot;</span>
+                        <span>{player.position}</span>
+                        {player.potential && (
+                          <>
+                            <span className="text-[var(--text-muted)]">&middot;</span>
+                            <span>{getDevelopmentLabel(player.potential)} Potential</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* OVR badge */}
+                    <div className="shrink-0 flex flex-col items-center bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg px-6 py-4">
+                      <span className="text-5xl font-bold text-[var(--text-primary)] leading-none">{player.overall_rating}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mt-1.5">OVR</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bio details column */}
+                <div className="hidden lg:flex flex-col justify-center gap-3 px-8 py-6 border-l border-[var(--border)] min-w-[250px]">
+                  {player.height != null && player.weight != null && (
+                    <DetailLine label="HT/WT" value={`${formatHeight(player.height)}, ${player.weight} lbs`} />
+                  )}
+                  <DetailLine label="AGE" value={String(player.age)} />
+                  {player.college && <DetailLine label="COLLEGE" value={player.college} />}
+                  {player.years_pro != null && (
+                    <DetailLine label="EXPERIENCE" value={`${player.years_pro} yr${player.years_pro !== 1 ? 's' : ''}`} />
+                  )}
+                  <DetailLine label="STATUS" value={injury ? `Injured — ${formatInjuryType(injury.type)}` : 'Active'} />
+                </div>
+
+                {/* Season stats box */}
+                {seasonData && Object.keys(seasonData).length > 0 && (
+                  <div className="hidden xl:flex flex-col shrink-0 min-w-[280px]">
+                    <div
+                      className="px-4 py-1.5 text-center text-xs font-bold uppercase tracking-wider text-white"
+                      style={{ backgroundColor: teamColor }}
+                    >
+                      {seasonYear ?? 'Current'} Regular Season Stats
+                    </div>
+                    <div className="flex-1 flex items-center justify-center gap-6 px-6 py-4">
+                      {posStatCols.map(([key, label]) => {
+                        const val = seasonData[key];
+                        if (val == null) return null;
+                        const isPct = key.endsWith('_pct') || key === 'passer_rating';
+                        return (
+                          <div key={key} className="text-center">
+                            <p className="text-xs font-semibold text-[var(--text-muted)]">{label}</p>
+                            <p className="text-2xl font-bold text-[var(--text-primary)]">{isPct ? val : val.toLocaleString()}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Contract + Actions strip */}
+            <div className="bg-[#222222] text-white">
+              <div className="flex items-center justify-between px-8 py-3.5">
+                {/* Left: Contract info */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/70">
+                  {contract && (
+                    <>
+                      <span>
+                        Contract: <span className="font-semibold text-white">{formatSalary(contract.salary_annual ?? contract.salary)}/yr</span>
+                      </span>
+                      <span>{contract.years_remaining} yr remaining</span>
+                    </>
+                  )}
+                  {freeAgent && (
+                    <span>
+                      Free Agent — Market Value: <span className="font-semibold text-white">{formatSalary(freeAgent.market_value)}/yr</span>
+                    </span>
+                  )}
+                  {!contract && !freeAgent && (
+                    <span>No contract information</span>
+                  )}
+                </div>
+
+                {/* Right: Action buttons */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => navigate(`/trade/find/${player.id}`)}
+                    className="rounded border border-white/20 px-4 py-1.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+                  >
+                    Find Trade
+                  </button>
+                  <button
+                    onClick={() => setCompareModalOpen(true)}
+                    className="rounded border border-white/20 px-4 py-1.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
+                  >
+                    Compare
+                  </button>
+                  {freeAgent && (
+                    <button
+                      onClick={handleSign}
+                      disabled={signing}
+                      className="rounded bg-green-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-green-500 transition-colors disabled:opacity-50"
+                    >
+                      {signing ? 'Signing...' : 'Sign Player'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+          </div>
+        );
+      })()}
+
+      {/* ── Contract Status Card (final contract year, your player) ── */}
+      {showContractCard && (() => {
+        const gm = (contractStatus as any).gm_advice;
+        const cap = (contractStatus as any).cap_info;
+        const presets = (contractStatus as any).offer_presets;
+        const w = contractStatus.willingness;
+        const minSalary = w.minimum_salary;
+        const prefYears = w.preferred_years;
+
+        const makeOffer = (salary: number, years: number) => {
+          setExtensionResult(null);
+          setExtensionSalary(String(Math.round(salary / 1_000_000 * 10) / 10));
+          setExtensionYears(String(years));
+          setExtensionModalOpen(true);
+        };
+
+        // Build offer options including "Match His Ask"
+        const offerOptions = [];
+        if (presets) {
+          offerOptions.push({ ...presets.team_friendly, key: 'team_friendly', color: 'blue' });
+          // Insert "Match His Ask" between team-friendly and balanced if it's different
+          if (minSalary && Math.abs(minSalary - presets.balanced.salary) > 200000) {
+            offerOptions.push({
+              key: 'match_ask',
+              label: 'Match His Ask',
+              description: "Exactly what he's asking for. Should get the deal done.",
+              salary: minSalary,
+              years: prefYears,
+              total: minSalary * prefYears,
+              risk: 'low',
+              color: 'purple',
+            });
+          }
+          offerOptions.push({ ...presets.balanced, key: 'balanced', color: 'gold' });
+          offerOptions.push({ ...presets.player_friendly, key: 'player_friendly', color: 'green' });
+        }
+
+        const colorMap: Record<string, { border: string; hover: string; text: string }> = {
+          blue: { border: 'border-blue-500/30', hover: 'hover:border-blue-500/50', text: 'text-blue-400' },
+          purple: { border: 'border-purple-500/30', hover: 'hover:border-purple-500/50', text: 'text-purple-400' },
+          gold: { border: 'border-[var(--accent-gold)]/30', hover: 'hover:border-[var(--accent-gold)]/50', text: 'text-[var(--accent-gold)]' },
+          green: { border: 'border-green-500/30', hover: 'hover:border-green-500/50', text: 'text-green-400' },
+        };
+
+        return (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
+            <div className="p-5 sm:p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <FileText className="h-5 w-5 text-[var(--text-muted)]" />
+                <h3 className="font-bold text-[var(--text-primary)]">Contract Status</h3>
+                <Badge variant="outline" className="ml-auto text-xs">
+                  {contractStatus.contract!.years_remaining <= 0 ? 'Expired' : 'Final Year'}
+                </Badge>
+              </div>
+
+              {/* Two-column layout: Left = player info, Right = GM + financials */}
+              <div className="grid gap-6 lg:grid-cols-5">
+
+                {/* LEFT COLUMN — Player's side (3 cols) */}
+                <div className="lg:col-span-3 space-y-4">
+                  {/* Player's quote */}
+                  <div className="rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] p-3">
+                    <div className="flex items-start gap-2">
+                      <MessageSquare className="h-4 w-4 text-[var(--text-muted)] mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm text-[var(--text-secondary)] italic">
+                          &ldquo;{w.reasoning}&rdquo;
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-[var(--text-muted)]">
+                          <span>Wants <span className="font-semibold text-[var(--text-primary)]">{formatSalary(minSalary)}/yr</span></span>
+                          <span>for <span className="font-semibold text-[var(--text-primary)]">{prefYears} year{prefYears !== 1 ? 's' : ''}</span></span>
+                          <span className={`font-semibold ${w.open_to_extension ? 'text-green-400' : 'text-red-400'}`}>
+                            {w.open_to_extension ? 'Open to staying' : 'Wants to leave'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contract numbers — plain English */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-3">
+                      <p className="text-[10px] text-[var(--text-muted)]">What he makes now</p>
+                      <p className="text-lg font-bold">{formatSalary(contractStatus.contract!.salary_annual)}/yr</p>
+                    </div>
+                    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-3">
+                      <p className="text-[10px] text-[var(--text-muted)]">What he&apos;s worth</p>
+                      <p className="text-lg font-bold">{formatSalary(contractStatus.market_value)}/yr</p>
+                      <p className="text-[9px] text-[var(--text-muted)] mt-0.5">Based on his rating, age, and position</p>
+                    </div>
+                  </div>
+
+                  {/* Offer presets */}
+                  {isMyPlayer && offerOptions.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">Make an Offer</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {offerOptions.map((opt: any) => {
+                          const c = colorMap[opt.color] ?? colorMap.gold;
+                          return (
+                            <button
+                              key={opt.key}
+                              onClick={() => makeOffer(opt.salary, opt.years)}
+                              className={`rounded-lg border p-3 text-left transition-all hover:bg-[var(--bg-elevated)] ${c.border} ${c.hover}`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <p className={`text-xs font-bold uppercase tracking-wider ${c.text}`}>
+                                  {opt.label}
+                                </p>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
+                                  opt.risk === 'low' ? 'text-green-400 border-green-500/20 bg-green-500/10' :
+                                  opt.risk === 'high' ? 'text-red-400 border-red-500/20 bg-red-500/10' :
+                                  'text-yellow-400 border-yellow-500/20 bg-yellow-500/10'
+                                }`}>
+                                  {opt.risk === 'low' ? 'Likely Accept' : opt.risk === 'high' ? 'May Reject' : 'Possible'}
+                                </span>
+                              </div>
+                              <p className="text-lg font-bold text-[var(--text-primary)]">{formatSalary(opt.salary)}/yr</p>
+                              <p className="text-xs text-[var(--text-muted)]">{opt.years} yr &middot; {formatSalary(opt.total)} total</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        onClick={() => makeOffer(contractStatus.market_value, prefYears)}
+                        className="w-full mt-1 rounded-lg border border-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+                      >
+                        <DollarSign className="h-3 w-3 inline-block mr-1 -mt-0.5" />
+                        Custom Offer
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* RIGHT COLUMN — GM + Financials (2 cols) */}
+                <div className="lg:col-span-2 space-y-4">
+                  {/* GM Advice */}
+                  {gm && (
+                    <div className={`rounded-lg p-4 border ${
+                      gm.priority === 'critical' ? 'bg-red-500/10 border-red-500/30' :
+                      gm.priority === 'high' ? 'bg-blue-500/10 border-blue-500/30' :
+                      gm.priority === 'low' ? 'bg-gray-500/10 border-gray-500/30' :
+                      'bg-yellow-500/10 border-yellow-500/30'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--accent-gold)]">GM Recommendation</span>
+                      </div>
+                      <Badge variant="outline" className={`text-[10px] mb-2 ${
+                        gm.recommendation === 'must_sign' ? 'bg-red-500/15 text-red-400 border-red-500/25' :
+                        gm.recommendation === 'should_sign' ? 'bg-green-500/15 text-green-400 border-green-500/25' :
+                        gm.recommendation === 'let_walk' ? 'bg-gray-500/15 text-gray-400 border-gray-500/25' :
+                        'bg-yellow-500/15 text-yellow-400 border-yellow-500/25'
+                      }`}>
+                        {gm.recommendation === 'must_sign' ? 'MUST SIGN' :
+                         gm.recommendation === 'should_sign' ? 'SHOULD SIGN' :
+                         gm.recommendation === 'let_walk' ? 'LET WALK' : 'CONSIDER'}
+                      </Badge>
+                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{gm.reasoning}</p>
+                    </div>
+                  )}
+
+                  {/* Your Budget — plain English */}
+                  {cap && (
+                    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)] mb-3">Your Budget</p>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-[var(--text-muted)]">Total budget</span>
+                          <span className="font-bold">{formatSalary(cap.cap_total)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-[var(--text-muted)]">Already committed</span>
+                          <span className="font-bold">{formatSalary(cap.cap_used)}</span>
+                        </div>
+                        <div className="h-px bg-[var(--border)]" />
+                        <div className="flex justify-between text-sm">
+                          <span className="font-semibold text-[var(--text-primary)]">Money you can spend</span>
+                          <span className={`font-bold ${cap.cap_remaining > 20000000 ? 'text-green-400' : cap.cap_remaining > 5000000 ? 'text-yellow-400' : 'text-red-400'}`}>
+                            {formatSalary(cap.cap_remaining)}
+                          </span>
+                        </div>
+                        {cap.dead_money > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-[var(--text-muted)]" title="Money still owed to players you cut — counts against your budget">Wasted on cut players</span>
+                            <span className="text-red-400">{formatSalary(cap.dead_money)}</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* Cap bar */}
+                      <div className="mt-3 h-2 w-full rounded-full bg-[var(--bg-elevated)] overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${cap.cap_remaining > 20000000 ? 'bg-green-500' : cap.cap_remaining > 5000000 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                          style={{ width: `${Math.min(100, (cap.cap_used / cap.cap_total) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                        {Math.round((cap.cap_used / cap.cap_total) * 100)}% of cap committed
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Contract info for players NOT on your team (read-only) */}
+      {contractStatus && contractStatus.contract && !isMyPlayer && isEligibleForExtension && (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-5 sm:p-6">
+          <div className="flex items-center gap-2 mb-3">
+            <FileText className="h-5 w-5 text-[var(--text-muted)]" />
+            <h3 className="font-bold text-[var(--text-primary)]">Contract Expiring</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-[var(--text-muted)]">Current Salary</p>
+              <p className="font-semibold text-[var(--text-primary)]">{formatSalary(contractStatus.contract.salary_annual)}/yr</p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--text-muted)]">Market Value</p>
+              <p className="font-semibold text-[var(--text-primary)]">{formatSalary(contractStatus.market_value)}/yr</p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--text-muted)]">Status</p>
+              <p className="font-semibold text-[var(--text-primary)]">{contractStatus.contract.years_remaining <= 0 ? 'Expired' : 'Final Year'}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Extension Offer Modal ── */}
+      {extensionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md mx-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
+              <h2 className="font-bold text-[var(--text-primary)]">
+                Offer Extension to {player?.first_name} {player?.last_name}
+              </h2>
+              <button onClick={() => setExtensionModalOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Show result if we have one */}
+              {extensionResult ? (
+                <div className="space-y-4">
+                  {/* Result banner */}
+                  <div className={`rounded-lg p-4 ${
+                    extensionResult.result === 'accepted'
+                      ? 'bg-green-500/10 border border-green-500/30'
+                      : extensionResult.result === 'countered'
+                        ? 'bg-yellow-500/10 border border-yellow-500/30'
+                        : 'bg-red-500/10 border border-red-500/30'
+                  }`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      {extensionResult.result === 'accepted' && <Check className="h-5 w-5 text-green-500" />}
+                      {extensionResult.result === 'countered' && <MessageSquare className="h-5 w-5 text-yellow-500" />}
+                      {extensionResult.result === 'refused' && <X className="h-5 w-5 text-red-400" />}
+                      <span className="font-bold text-[var(--text-primary)]">
+                        {extensionResult.result === 'accepted' && 'Deal!'}
+                        {extensionResult.result === 'countered' && 'Counter Offer'}
+                        {extensionResult.result === 'refused' && 'Declined'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-[var(--text-secondary)]">{extensionResult.message}</p>
+                  </div>
+
+                  {/* Player's quote */}
+                  <div className="rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] p-3">
+                    <p className="text-sm text-[var(--text-secondary)] italic">"{extensionResult.reasoning}"</p>
+                  </div>
+
+                  {/* Counter offer details */}
+                  {extensionResult.result === 'countered' && extensionResult.counter_offer && (
+                    <div className="space-y-3">
+                      <div className="text-sm text-[var(--text-secondary)]">
+                        <p>He wants:</p>
+                        <p className="font-bold text-[var(--text-primary)] text-lg mt-1">
+                          {formatSalary(extensionResult.counter_offer.salary)}/yr, {extensionResult.counter_offer.years} year{extensionResult.counter_offer.years !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleAcceptCounter}
+                          disabled={extensionSubmitting}
+                          className="flex-1 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                        >
+                          {extensionSubmitting ? 'Accepting...' : 'Accept Counter'}
+                        </button>
+                        <button
+                          onClick={() => setExtensionModalOpen(false)}
+                          className="flex-1 rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+                        >
+                          Walk Away
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Close button for accepted/refused */}
+                  {extensionResult.result !== 'countered' && (
+                    <button
+                      onClick={() => {
+                        setExtensionModalOpen(false);
+                        // Refresh all player data so the new contract shows
+                        queryClient.invalidateQueries({ queryKey: ['player', Number(id)] });
+                        queryClient.invalidateQueries({ queryKey: ['contractStatus', Number(id)] });
+                        queryClient.invalidateQueries({ queryKey: ['contractPlanner'] });
+                        queryClient.invalidateQueries({ queryKey: ['roster'] });
+                      }}
+                      className="w-full rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+                    >
+                      {extensionResult.result === 'accepted' ? 'Done' : 'Close'}
+                    </button>
+                  )}
+                </div>
+              ) : (
                 <>
-                  <span className="text-[var(--text-muted)]">|</span>
-                  <span className="text-sm text-[var(--text-secondary)]">
-                    {team.city} {team.name}
-                  </span>
+                  {/* Offer form */}
+                  <div>
+                    <p className="text-xs text-[var(--text-muted)] mb-1">Market Value</p>
+                    <p className="text-sm font-semibold text-[var(--text-primary)] mb-3">
+                      {contractStatus ? formatSalary(contractStatus.market_value) : '---'}/yr
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-[var(--text-muted)] mb-1">Annual Salary (in millions)</label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[var(--text-muted)]">$</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="1.1"
+                        value={extensionSalary}
+                        onChange={(e) => setExtensionSalary(e.target.value)}
+                        className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)]"
+                        placeholder="15.0"
+                      />
+                      <span className="text-[var(--text-muted)] text-sm">M/yr</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-[var(--text-muted)] mb-1">Contract Length (years)</label>
+                    <select
+                      value={extensionYears}
+                      onChange={(e) => setExtensionYears(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)]"
+                    >
+                      {[1, 2, 3, 4, 5, 6].map((y) => (
+                        <option key={y} value={y}>{y} year{y > 1 ? 's' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="text-xs text-[var(--text-muted)]">
+                    Total value: <span className="font-semibold text-[var(--text-primary)]">{formatSalary(parseFloat(extensionSalary || '0') * parseInt(extensionYears || '1') * 1_000_000)}</span>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={handleOfferExtension}
+                      disabled={extensionSubmitting}
+                      className="flex-1 rounded-lg bg-[var(--accent-blue)] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                    >
+                      {extensionSubmitting ? 'Submitting...' : 'Make Offer'}
+                    </button>
+                    <button
+                      onClick={() => setExtensionModalOpen(false)}
+                      className="rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </>
               )}
             </div>
-
-            <h1 className="font-display leading-tight">
-              <span className="block text-2xl text-[var(--text-secondary)]">{player.first_name}</span>
-              <span className="block text-5xl sm:text-6xl tracking-tight">{player.last_name}</span>
-            </h1>
-
-            {/* Abilities Row */}
-            {(player.edge || abilities.length > 0) && (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {player.edge && (
-                  <span className="inline-flex items-center gap-1.5 rounded border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-yellow-400">
-                    <Zap className="h-3 w-3" />
-                    Edge: {player.edge}
-                  </span>
-                )}
-                {abilities.map((ability) => (
-                  <span
-                    key={ability}
-                    className="inline-flex items-center gap-1 rounded border border-purple-500/40 bg-purple-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-purple-400"
-                  >
-                    <Star className="h-2.5 w-2.5" />
-                    {ability}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* OVR Rating Badge */}
-          <div className={`flex h-24 w-24 shrink-0 flex-col items-center justify-center rounded-lg border-2 ${overallBorderColor(player.overall_rating)} bg-[var(--bg-primary)]`}>
-            <span className={`font-display text-5xl leading-none ${overallTextColor(player.overall_rating)}`}>
-              {player.overall_rating}
-            </span>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">
-              OVR
-            </span>
           </div>
         </div>
+      )}
 
-        {/* Physical Info Bar */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-white/5 bg-black/20 px-8 py-3 pl-10 text-xs">
-          {player.height != null && (
-            <div>
-              <span className="text-[var(--text-muted)]">HT </span>
-              <span className="font-semibold">{formatHeight(player.height)}</span>
-            </div>
-          )}
-          {player.weight != null && (
-            <div>
-              <span className="text-[var(--text-muted)]">WT </span>
-              <span className="font-semibold">{player.weight} lbs</span>
-            </div>
-          )}
-          <div>
-            <span className="text-[var(--text-muted)]">AGE </span>
-            <span className="font-semibold">{player.age}</span>
-          </div>
-          {player.college && (
-            <div>
-              <span className="text-[var(--text-muted)]">COLLEGE </span>
-              <span className="font-semibold">{player.college}</span>
-            </div>
-          )}
-          {player.years_pro != null && (
-            <div>
-              <span className="text-[var(--text-muted)]">EXP </span>
-              <span className="font-semibold">{player.years_pro} YR{player.years_pro !== 1 ? 'S' : ''}</span>
-            </div>
-          )}
-          {player.handedness && (
-            <div>
-              <span className="text-[var(--text-muted)]">THROWS </span>
-              <span className="font-semibold">{player.handedness}</span>
-            </div>
-          )}
-          {player.archetype && (
-            <div>
-              <span className="text-[var(--text-muted)]">BLUEPRINT </span>
-              <span className="font-semibold">{player.archetype}</span>
-            </div>
-          )}
-          {contract && (
-            <div>
-              <span className="text-[var(--text-muted)]">CONTRACT </span>
-              <span className="font-semibold">{formatSalary(contract.salary)}/yr, {contract.years_remaining}yr</span>
-            </div>
-          )}
-          {injury && (
-            <Badge variant="destructive" className="text-[10px]">
-              {injury.type} — {injury.severity} ({injury.weeks_remaining}w)
-            </Badge>
-          )}
-        </div>
-
-        {/* Free Agent Sign Bar */}
-        {freeAgent && (
-          <div className="flex items-center justify-between border-t border-white/5 bg-green-500/[0.04] px-8 py-3 pl-10">
-            <div className="flex items-center gap-4 text-sm">
-              <Badge className="bg-green-500/10 text-green-400 border-green-500/20">Free Agent</Badge>
-              <span className="text-[var(--text-secondary)]">
-                Market Value: <span className="font-semibold text-[var(--text-primary)]">{formatSalary(freeAgent.market_value)}</span>/yr
-              </span>
-            </div>
-            <Button
-              size="sm"
-              onClick={handleSign}
-              disabled={signing}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              {signing ? 'Signing...' : `Sign Player — ${formatSalary(freeAgent.market_value)}/yr`}
-            </Button>
-          </div>
-        )}
+      {/* ── Tabs ── */}
+      <div className="flex gap-1 border-b border-[var(--border)]">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              activeTab === tab.key
+                ? 'border-[var(--accent-blue)] text-[var(--text-primary)]'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {/* ===== TABBED CONTENT - Madden Tab Strip ===== */}
-      <Tabs defaultValue="ratings">
-        <div className="rounded-b-none border-b border-white/5 bg-[var(--bg-surface)]">
-          <TabsList variant="line" className="h-auto gap-0 rounded-none bg-transparent px-4">
-            <TabsTrigger value="overview" className="rounded-none px-5 py-3 text-xs font-semibold uppercase tracking-wider">
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="ratings" className="rounded-none px-5 py-3 text-xs font-semibold uppercase tracking-wider">
-              Ratings
-            </TabsTrigger>
-            <TabsTrigger value="stats" className="rounded-none px-5 py-3 text-xs font-semibold uppercase tracking-wider">
-              Stats
-            </TabsTrigger>
-            <TabsTrigger value="gamelog" className="rounded-none px-5 py-3 text-xs font-semibold uppercase tracking-wider">
-              Game Log
-            </TabsTrigger>
-            <TabsTrigger value="health" className="rounded-none px-5 py-3 text-xs font-semibold uppercase tracking-wider">
-              Health
-            </TabsTrigger>
-            <TabsTrigger value="traits" className="rounded-none px-5 py-3 text-xs font-semibold uppercase tracking-wider">
-              Traits
-            </TabsTrigger>
-          </TabsList>
-        </div>
+      {/* ── Tab Content (min height prevents page jumping between tabs) ── */}
+      <div className="min-h-[500px]">
 
-        {/* ===== OVERVIEW TAB ===== */}
-        <TabsContent value="overview" className="mt-0">
-          <div className="rounded-b-xl bg-[var(--bg-surface)] p-6 sm:p-8">
-            <div className="grid gap-8 lg:grid-cols-3">
-              {/* Player Summary */}
-              <div className="lg:col-span-2 space-y-6">
-                <div>
-                  <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-3">Player Summary</h2>
-                  <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                    {player.first_name} {player.last_name} is a {player.age}-year-old {player.archetype ?? ''} {player.position}
-                    {team ? ` for the ${team.city} ${team.name}` : ''}.
-                    {player.years_pro != null ? ` Now in year ${player.years_pro} of his career` : ''}
-                    {player.college ? ` out of ${player.college}` : ''}.
-                    {player.overall_rating >= 90 ? ' He is an elite player at his position.' :
-                     player.overall_rating >= 80 ? ' He is a solid starter with room to grow.' :
-                     player.overall_rating >= 70 ? ' He is a capable player who can contribute.' :
-                     ' He is still developing his skills.'}
-                  </p>
-                </div>
-
-                {/* Quick Ratings Preview */}
-                {ratingCategories.length > 0 && (
-                  <div>
-                    <h3 className="font-display text-sm uppercase tracking-wider text-[var(--text-muted)] mb-4">Key Ratings</h3>
-                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-4">
-                      {Object.entries(displayRatings).flatMap(([, catRatings]) =>
-                        Object.entries(catRatings)
-                      ).slice(0, 6).map(([key, val]) => (
-                        <RatingNumber key={key} label={formatStatName(key)} value={val} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Season Stats Preview */}
-                {stats?.season && Object.keys(stats.season).length > 0 && (
-                  <div>
-                    <h3 className="font-display text-sm uppercase tracking-wider text-[var(--text-muted)] mb-4">Season Highlights</h3>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-4">
-                      {Object.entries(stats.season).filter(([, val]) => val != null && val !== 0).slice(0, 5).map(([key, val]) => (
-                        <div key={key} className="rounded-lg bg-[var(--bg-elevated)] p-3 text-center">
-                          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{key.replace(/_/g, ' ')}</p>
-                          <p className="font-display text-2xl text-[var(--text-primary)]">{val as React.ReactNode}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Sidebar Info */}
-              <div className="space-y-5">
-                {/* Contract Card */}
-                {contract && (
-                  <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                    <h3 className="font-display text-xs uppercase tracking-wider text-[var(--text-muted)] mb-3">Contract</h3>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-[var(--text-secondary)]">Salary</span>
-                        <span className="font-semibold">{formatSalary(contract.salary)}/yr</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-[var(--text-secondary)]">Years Left</span>
-                        <span className="font-semibold">{contract.years_remaining}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Morale */}
-                {player.morale && (
-                  <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                    <h3 className="font-display text-xs uppercase tracking-wider text-[var(--text-muted)] mb-2">Morale</h3>
-                    <div className="flex items-center gap-3">
-                      <span className={`font-display text-2xl ${moraleColor(player.morale)}`}>{formatLabel(player.morale)}</span>
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
-                        <div
-                          className={`h-full rounded-full transition-all ${moraleBgColor(player.morale)}`}
-                          style={{ width: `${moralePercent(player.morale)}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Quick Actions */}
-                <div className="space-y-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full justify-between"
-                    onClick={() => setTradeModalOpen(true)}
-                  >
-                    Find a Trade
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* ===== RATINGS TAB - Madden Style ===== */}
-        <TabsContent value="ratings" className="mt-0">
-          <div className="rounded-b-xl bg-[var(--bg-surface)] p-6 sm:p-8">
-            <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
-              {/* Left Column: Analysis, Morale, Personality */}
-              <div className="space-y-6">
-                {/* Analysis */}
-                <div>
-                  <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-3">
-                    Analysis
-                  </h2>
-                  <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                    {player.first_name} {player.last_name} is a{' '}
-                    <strong className="font-bold text-[var(--text-primary)]">
-                      {player.archetype ?? player.position}
-                    </strong>{' '}
-                    with an Overall Rating of{' '}
-                    <strong className="font-bold text-[var(--text-primary)]">
-                      {player.overall_rating}
-                    </strong>
-                    {player.overall_rating >= 85
-                      ? ', putting him among the elite at his position.'
-                      : player.overall_rating >= 75
-                        ? ', making him a quality starter.'
-                        : player.overall_rating >= 65
-                          ? ', giving him potential to contribute.'
-                          : '.'}
-                  </p>
-                  {player.potential && (
-                    <p className="mt-2 text-sm text-[var(--text-secondary)]">
-                      Development:{' '}
-                      <strong className="font-bold text-[var(--text-primary)]">{getDevelopmentLabel(player.potential)}</strong>
-                    </p>
-                  )}
-                </div>
-
-                <Separator className="bg-white/5" />
-
-                {/* Morale */}
-                <div>
-                  <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-2">
-                    Morale
-                  </h2>
-                  {player.morale ? (
-                    <>
-                      <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                        <BoldText text={getMoraleDescription(player.morale, player.first_name)} />
-                      </p>
-                      <div className="mt-3 flex items-center gap-3">
-                        <span className={`font-display text-3xl ${moraleColor(player.morale)}`}>
-                          {formatLabel(player.morale)}
-                        </span>
-                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+      {/* RATINGS */}
+      {activeTab === 'ratings' && (
+        <div className="space-y-6">
+          {ratingCategories.length > 0 ? (
+            ratingCategories.map((category) => {
+              const catEntries = Object.entries(displayRatings[category]);
+              return (
+                <div key={category} className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-5 sm:p-6">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-muted)] mb-4">
+                    {CATEGORY_LABELS[category] ?? formatLabel(category)}
+                  </h3>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-x-6 gap-y-5">
+                    {catEntries.map(([key, val]) => (
+                      <div key={key}>
+                        <p className="text-xs text-[var(--text-muted)] mb-1">{formatStatName(key)}</p>
+                        <p className="text-3xl font-bold text-[var(--text-primary)] leading-none">{val}</p>
+                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-[var(--bg-elevated)]">
                           <div
-                            className={`h-full rounded-full ${moraleBgColor(player.morale)}`}
-                            style={{ width: `${moralePercent(player.morale)}%` }}
+                            className="h-full rounded-full bg-[var(--accent-blue)] transition-all"
+                            style={{ width: `${val}%` }}
                           />
                         </div>
                       </div>
-                    </>
-                  ) : (
-                    <p className="text-sm text-[var(--text-muted)]">No morale data available.</p>
-                  )}
+                    ))}
+                  </div>
                 </div>
+              );
+            })
+          ) : (
+            <p className="text-center text-[var(--text-secondary)] py-8">No ratings data available.</p>
+          )}
 
-                <Separator className="bg-white/5" />
+          {/* Sidebar info */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {player.potential && (
+              <InfoCard label="Development" value={getDevelopmentLabel(player.potential)} />
+            )}
+            {player.personality && (
+              <InfoCard label="Personality" value={formatLabel(player.personality)} />
+            )}
+            {player.morale && (
+              <InfoCard label="Morale" value={formatLabel(player.morale)} />
+            )}
+          </div>
+        </div>
+      )}
 
-                {/* Personality */}
+      {/* SCOUT REPORT */}
+      {activeTab === 'scout' && (() => {
+        const report = (detail as any)?.scout_report as { scout: string; style: string; paragraphs: string[] } | undefined;
+        if (!report || !report.paragraphs?.length) {
+          return (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-8 text-center">
+              <FileText className="mx-auto h-8 w-8 text-[var(--text-muted)] mb-2" />
+              <p className="text-[var(--text-secondary)]">No scout report available</p>
+            </div>
+          );
+        }
+
+        const styleColor = report.style === 'old_school'
+          ? 'var(--accent-red)'
+          : report.style === 'analytical'
+            ? 'var(--accent-blue)'
+            : 'var(--accent-gold)';
+
+        const styleLabel = report.style === 'old_school'
+          ? 'Old School'
+          : report.style === 'analytical'
+            ? 'Analytical'
+            : 'Narrative';
+
+        return (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
+            {/* Scout byline */}
+            <div
+              className="px-6 py-4 border-b border-[var(--border)]"
+              style={{ background: `linear-gradient(135deg, color-mix(in srgb, ${styleColor} 8%, transparent), var(--bg-surface))` }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                  style={{ backgroundColor: styleColor }}
+                >
+                  {report.scout.split(' ').map(n => n[0]).join('')}
+                </div>
                 <div>
-                  <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-2">
-                    Personality
-                  </h2>
-                  <p className="text-sm text-[var(--text-secondary)]">
-                    {formatLabel(player.personality ?? 'Unknown')}
+                  <p className="font-display text-base text-[var(--text-primary)]">{report.scout}</p>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {styleLabel} Scout — Scouting Report
                   </p>
                 </div>
-
-                <Separator className="bg-white/5" />
-
-                {/* Status */}
-                <div>
-                  <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-2">
-                    Status
-                  </h2>
-                  <div className="flex flex-wrap gap-2">
-                    {player.status && (
-                      <Badge variant={player.status === 'active' ? 'default' : 'destructive'} className="uppercase text-[10px] tracking-wider">
-                        {player.status}
-                      </Badge>
-                    )}
-                    {injury && (
-                      <Badge variant="destructive" className="uppercase text-[10px] tracking-wider">
-                        {injury.type} — {injury.severity} ({injury.weeks_remaining}w)
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: Rating Numbers Grid */}
-              <div className="space-y-8">
-                {/* Core Attributes */}
-                {primaryCategories.length > 0 && (
-                  <div>
-                    <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-5">
-                      Core Attributes
-                    </h2>
-                    <div className="space-y-6">
-                      {primaryCategories.map((category) => {
-                        const catEntries = Object.entries(displayRatings[category]);
-                        return (
-                          <div key={category}>
-                            {primaryCategories.length > 1 && (
-                              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                                {CATEGORY_LABELS[category] ?? category.replace(/_/g, ' ')}
-                              </h3>
-                            )}
-                            <div className="grid grid-cols-3 gap-x-6 gap-y-5 sm:grid-cols-4">
-                              {catEntries.map(([key, val]) => (
-                                <RatingNumber key={key} label={formatStatName(key)} value={val} />
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Secondary Attributes */}
-                {secondaryCategories.length > 0 && (
-                  <div>
-                    <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-5">
-                      Secondary Attributes
-                    </h2>
-                    <div className="space-y-6">
-                      {secondaryCategories.map((category) => {
-                        const catEntries = Object.entries(displayRatings[category]);
-                        return (
-                          <div key={category}>
-                            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                              {CATEGORY_LABELS[category] ?? category.replace(/_/g, ' ')}
-                            </h3>
-                            <div className="grid grid-cols-3 gap-x-6 gap-y-5 sm:grid-cols-4">
-                              {catEntries.map(([key, val]) => (
-                                <RatingNumber key={key} label={formatStatName(key)} value={val} />
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {ratingCategories.length === 0 && (
-                  <p className="text-sm text-[var(--text-muted)]">No ratings data available.</p>
-                )}
               </div>
             </div>
-          </div>
-        </TabsContent>
 
-        {/* ===== STATS TAB ===== */}
-        <TabsContent value="stats" className="mt-0">
-          <div className="rounded-b-xl bg-[var(--bg-surface)] p-6 sm:p-8">
-            <div className="space-y-8">
-              {/* Season Stats */}
-              <div>
-                <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-5">
-                  Season Statistics
-                </h2>
-                {stats?.season && Object.keys(stats.season).length > 0 ? (
-                  <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">
-                    {Object.entries(stats.season).filter(([, val]) => val != null && val !== 0).map(([key, val]) => (
-                      <div key={key} className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-3 text-center">
-                        <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{key.replace(/_/g, ' ')}</p>
-                        <p className="font-display text-3xl text-[var(--text-primary)]">{val as React.ReactNode}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-[var(--text-muted)]">No stats yet this season.</p>
-                )}
-              </div>
-
-              {/* Career Stats */}
-              {stats?.career && Object.keys(stats.career).length > 0 && (
-                <div>
-                  <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-5">
-                    Career Statistics
-                  </h2>
-                  <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">
-                    {Object.entries(stats.career).filter(([, val]) => val != null && val !== 0).map(([key, val]) => (
-                      <div key={key} className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-3 text-center">
-                        <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{key.replace(/_/g, ' ')}</p>
-                        <p className="font-display text-3xl text-[var(--text-primary)]">{val as React.ReactNode}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            {/* Report body */}
+            <div className="px-6 py-5 space-y-4">
+              {report.paragraphs.map((para, i) => (
+                <p key={i} className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                  {para}
+                </p>
+              ))}
             </div>
           </div>
-        </TabsContent>
+        );
+      })()}
 
-        {/* ===== GAME LOG TAB ===== */}
-        <TabsContent value="gamelog" className="mt-0">
-          <div className="rounded-b-xl bg-[var(--bg-surface)] overflow-hidden">
-            {gameLog && Array.isArray(gameLog) && gameLog.length > 0 ? (
+      {/* STATS */}
+      {activeTab === 'stats' && (
+        <div className="space-y-6">
+          {/* Current Season Totals */}
+          <StatsBlock
+            label={`${stats?.season_year ?? 'Current'} Season`}
+            data={stats?.season ?? null}
+            position={player.position}
+          />
+
+          {/* Current Season Game-by-Game */}
+          {gameLog && Array.isArray(gameLog) && gameLog.length > 0 && (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
+              <div className="p-5 sm:p-6 pb-0">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-muted)] mb-4">{stats?.season_year ?? 'Current'} Game Log</h3>
+              </div>
               <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-white/5 hover:bg-transparent">
-                      <TableHead className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">WK</TableHead>
-                      <TableHead className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">OPP</TableHead>
-                      <TableHead className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">RESULT</TableHead>
-                      {Object.keys(gameLog[0]?.stats ?? {}).map((k) => (
-                        <TableHead key={k} className="text-center text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                          {k.replace(/_/g, ' ')}
-                        </TableHead>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--border)] text-left">
+                      <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">WK</th>
+                      <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">TM</th>
+                      <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">OPP</th>
+                      <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Result</th>
+                      {gameCols.map(([, label]) => (
+                        <th key={label} className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</th>
                       ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                      {isQB && <th className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">RTG</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
                     {gameLog.map((g) => (
-                      <TableRow key={g.week} className="border-white/5 hover:bg-white/[0.02]">
-                        <TableCell className="font-mono text-sm font-semibold">{g.week}</TableCell>
-                        <TableCell className="text-sm">{g.opponent}</TableCell>
-                        <TableCell>
-                          <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-bold ${
-                            g.result === 'W'
-                              ? 'bg-green-500/10 text-green-400'
-                              : 'bg-red-500/10 text-red-400'
-                          }`}>
-                            {g.result} {g.score}
+                      <tr key={g.week} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-elevated)] transition-colors">
+                        <td className="px-4 py-3 font-semibold">{g.week}</td>
+                        <td className="px-3 py-3">
+                          <span
+                            className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold text-white"
+                            style={{ backgroundColor: (g as Record<string, unknown>).team_color as string ?? 'var(--text-muted)' }}
+                          >
+                            {(g as Record<string, unknown>).team as string ?? ''}
                           </span>
-                        </TableCell>
-                        {Object.values(g.stats ?? {}).map((v, i) => (
-                          <TableCell key={i} className="text-center font-mono text-sm">{v || '—'}</TableCell>
-                        ))}
-                      </TableRow>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-[var(--text-muted)]">{g.location === 'away' ? '@' : 'vs'}</span> {g.opponent}
+                        </td>
+                        <td className="px-4 py-3 font-semibold">{g.result} {g.score}</td>
+                        {gameCols.map(([colKey]) => {
+                          const val = (g as Record<string, unknown>)[colKey];
+                          const num = Number(val ?? 0);
+                          return (
+                            <td key={colKey} className={`px-3 py-3 text-center ${num > 0 ? 'font-semibold' : 'text-[var(--text-muted)]'}`}>
+                              {num || '—'}
+                            </td>
+                          );
+                        })}
+                        {isQB && (
+                          <td className="px-3 py-3 text-center font-semibold">{computeGamePasserRating(g)}</td>
+                        )}
+                      </tr>
                     ))}
-                  </TableBody>
-                </Table>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Career Year-by-Year Table */}
+          {stats?.career_by_year && stats.career_by_year.length > 0 && (
+            <CareerTable
+              years={stats.career_by_year}
+              position={player.position}
+              careerTotals={stats.career}
+            />
+          )}
+        </div>
+      )}
+
+      {/* GAME LOG */}
+      {activeTab === 'gamelog' && (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
+          {gameLog && Array.isArray(gameLog) && gameLog.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border)] text-left">
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">WK</th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">TM</th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">OPP</th>
+                    <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Result</th>
+                    {gameCols.map(([, label]) => (
+                      <th key={label} className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</th>
+                    ))}
+                    {isQB && <th className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">RTG</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {gameLog.map((g) => (
+                    <tr key={g.week} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-elevated)] transition-colors">
+                      <td className="px-4 py-3 font-semibold">{g.week}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold text-white"
+                          style={{ backgroundColor: (g as Record<string, unknown>).team_color as string ?? 'var(--text-muted)' }}
+                        >
+                          {(g as Record<string, unknown>).team as string ?? ''}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-[var(--text-muted)]">{g.location === 'away' ? '@' : 'vs'}</span> {g.opponent}
+                      </td>
+                      <td className="px-4 py-3 font-semibold">{g.result} {g.score}</td>
+                      {gameCols.map(([colKey]) => {
+                        const val = (g as Record<string, unknown>)[colKey];
+                        const num = Number(val ?? 0);
+                        return (
+                          <td key={colKey} className={`px-3 py-3 text-center ${num > 0 ? 'font-semibold' : 'text-[var(--text-muted)]'}`}>
+                            {num || '—'}
+                          </td>
+                        );
+                      })}
+                      {isQB && (
+                        <td className="px-3 py-3 text-center font-semibold">{computeGamePasserRating(g)}</td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-center text-[var(--text-secondary)] py-8">No game log entries yet.</p>
+          )}
+        </div>
+      )}
+
+      {/* HEALTH */}
+      {activeTab === 'health' && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-6">
+            {injury ? (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Activity className="h-5 w-5 text-[var(--text-muted)]" />
+                  <h3 className="font-bold text-[var(--text-primary)]">{formatInjuryType(injury.type)} Injury</h3>
+                </div>
+                <p className="text-[var(--text-secondary)]">
+                  Severity: <span className="font-semibold text-[var(--text-primary)]">{formatInjurySeverity(injury.severity)}</span>
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  Recovery: <span className="font-semibold text-[var(--text-primary)]">{injury.weeks_remaining} week{injury.weeks_remaining !== 1 ? 's' : ''} remaining</span>
+                </p>
               </div>
             ) : (
-              <div className="p-8">
-                <p className="text-sm text-[var(--text-muted)]">No game log entries yet.</p>
+              <div className="flex items-center gap-3">
+                <Heart className="h-5 w-5 text-[var(--text-muted)]" />
+                <div>
+                  <h3 className="font-bold text-[var(--text-primary)]">Healthy</h3>
+                  <p className="text-[var(--text-secondary)]">{player.first_name} is fully healthy and available to play.</p>
+                </div>
               </div>
             )}
           </div>
-        </TabsContent>
 
-        {/* ===== HEALTH TAB ===== */}
-        <TabsContent value="health" className="mt-0">
-          <div className="rounded-b-xl bg-[var(--bg-surface)] p-6 sm:p-8">
-            <div className="grid gap-6 lg:grid-cols-2">
-              {/* Current Health Status */}
-              <div>
-                <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-4">
-                  Health Status
-                </h2>
-                {injury ? (
-                  <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-5">
-                    <div className="flex items-start gap-4">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10">
-                        <Activity className="h-5 w-5 text-red-400" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-red-400">{injury.type}</h3>
-                        <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                          Severity: <span className="font-semibold text-red-400">{injury.severity}</span>
-                        </p>
-                        <p className="text-sm text-[var(--text-secondary)]">
-                          Recovery: <span className="font-semibold">{injury.weeks_remaining} week{injury.weeks_remaining !== 1 ? 's' : ''} remaining</span>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-5">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10">
-                        <Heart className="h-5 w-5 text-green-400" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-green-400">Healthy</h3>
-                        <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                          {player.first_name} is fully healthy and available to play.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {player.stamina != null && <InfoCard label="Stamina" value={String(player.stamina)} />}
+            <InfoCard label="Age" value={String(player.age)} sub={
+              player.age <= 25 ? 'Still developing' :
+              player.age <= 30 ? 'In his prime' :
+              player.age <= 33 ? 'Late prime' : 'Veteran — decline risk'
+            } />
+            {player.status && <InfoCard label="Status" value={formatLabel(player.status)} />}
+          </div>
+        </div>
+      )}
 
-              {/* Stamina/Physical Condition */}
-              <div>
-                <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-4">
-                  Physical Condition
-                </h2>
-                <div className="space-y-4">
-                  {player.stamina != null && (
-                    <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Stamina</span>
-                        <span className={`font-display text-2xl ${ratingColor(player.stamina)}`}>{player.stamina}</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                        <div
-                          className={`h-full rounded-full ${ratingBarColor(player.stamina)}`}
-                          style={{ width: `${player.stamina}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Age</span>
-                      <span className="font-display text-2xl">{player.age}</span>
-                    </div>
-                    <p className="text-xs text-[var(--text-muted)]">
-                      {player.age <= 25 ? 'Still developing — prime years ahead.' :
-                       player.age <= 30 ? 'In his prime playing years.' :
-                       player.age <= 33 ? 'Approaching the tail end of his prime.' :
-                       'Veteran player — decline risk increasing.'}
-                    </p>
-                  </div>
+      {/* AWARDS */}
+      {activeTab === 'awards' && (
+        <div className="space-y-6">
+          {/* Award Summary Counts */}
+          {playerAwards && playerAwards.summary && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              {playerAwards.summary.all_league_first > 0 && (
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 text-center">
+                  <p className="text-3xl font-bold text-[var(--text-primary)]">{playerAwards.summary.all_league_first}x</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">All-League First Team</p>
                 </div>
+              )}
+              {playerAwards.summary.all_league_second > 0 && (
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 text-center">
+                  <p className="text-3xl font-bold text-[var(--text-primary)]">{playerAwards.summary.all_league_second}x</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">All-League Second Team</p>
+                </div>
+              )}
+              {playerAwards.summary.gridiron_classic > 0 && (
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 text-center">
+                  <p className="text-3xl font-bold text-[var(--text-primary)]">{playerAwards.summary.gridiron_classic}x</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">Gridiron Classic</p>
+                </div>
+              )}
+              {playerAwards.summary.mvp > 0 && (
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 text-center">
+                  <p className="text-3xl font-bold text-[var(--text-primary)]">{playerAwards.summary.mvp}x</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">MVP</p>
+                </div>
+              )}
+              {playerAwards.summary.opoy > 0 && (
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 text-center">
+                  <p className="text-3xl font-bold text-[var(--text-primary)]">{playerAwards.summary.opoy}x</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">Off. Player of the Year</p>
+                </div>
+              )}
+              {playerAwards.summary.dpoy > 0 && (
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 text-center">
+                  <p className="text-3xl font-bold text-[var(--text-primary)]">{playerAwards.summary.dpoy}x</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">Def. Player of the Year</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Full Awards List by Year */}
+          {playerAwards && playerAwards.list.length > 0 ? (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--border)] text-left">
+                      <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Year</th>
+                      <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Award</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {playerAwards.list.map((award, i) => (
+                      <tr key={`${award.type}-${award.season_year}-${i}`} className="border-b border-[var(--border)] last:border-0">
+                        <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">{award.season_year}</td>
+                        <td className="px-4 py-3 text-[var(--text-primary)]">{award.label}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
-          </div>
-        </TabsContent>
+          ) : (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-8 text-center">
+              <p className="text-[var(--text-secondary)]">No awards yet.</p>
+            </div>
+          )}
+        </div>
+      )}
 
-        {/* ===== TRAITS TAB ===== */}
-        <TabsContent value="traits" className="mt-0">
-          <div className="rounded-b-xl bg-[var(--bg-surface)] p-6 sm:p-8">
-            <div className="grid gap-6 lg:grid-cols-2">
-              {/* Edge & Instincts */}
-              <div>
-                <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-4">
-                  Abilities
-                </h2>
-                <div className="space-y-3">
-                  {player.edge ? (
-                    <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-                          <Zap className="h-5 w-5 text-yellow-400" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-yellow-500/70">Edge</p>
-                          <p className="font-semibold text-yellow-400">{player.edge}</p>
-                        </div>
-                      </div>
-                    </div>
+      {/* TRAITS */}
+      {activeTab === 'traits' && (
+        <div className="space-y-4">
+          {/* Edge + Instincts */}
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-6">
+            <h3 className="font-bold text-[var(--text-primary)] mb-4">Abilities</h3>
+            {player.edge ? (
+              <div className="flex items-center gap-3 mb-3">
+                <Zap className="h-5 w-5 text-[var(--text-muted)]" />
+                <div>
+                  <p className="text-xs text-[var(--text-muted)]">Edge</p>
+                  <p className="font-semibold text-[var(--text-primary)]">{player.edge}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[var(--text-secondary)] mb-3">No Edge ability.</p>
+            )}
+            {abilities.length > 0 ? (
+              abilities.map((a) => (
+                <div key={a} className="flex items-center gap-3 mb-3">
+                  <Star className="h-5 w-5 text-[var(--text-muted)]" />
+                  <div>
+                    <p className="text-xs text-[var(--text-muted)]">Instinct</p>
+                    <p className="font-semibold text-[var(--text-primary)]">{a}</p>
+                  </div>
+                </div>
+              ))
+            ) : !player.edge ? (
+              <p className="text-[var(--text-secondary)]">No instincts.</p>
+            ) : null}
+          </div>
+
+          {/* Trait cards */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {player.personality && <InfoCard label="Personality" value={formatLabel(player.personality)} />}
+            {player.potential && <InfoCard label="Development" value={getDevelopmentLabel(player.potential)} />}
+            {player.archetype && <InfoCard label="Blueprint" value={player.archetype} />}
+            {player.running_style && <InfoCard label="Running Style" value={player.running_style} />}
+            {player.handedness && <InfoCard label="Handedness" value={player.handedness} />}
+          </div>
+
+          <div className="text-center">
+            <button onClick={() => navigate('/glossary')} className="text-sm text-[var(--accent-blue)] hover:underline">
+              View glossary of Edges, Instincts, Blueprints & Development tiers
+            </button>
+          </div>
+        </div>
+      )}
+
+      </div>{/* end min-h tab content wrapper */}
+
+      {/* Modals */}
+      <PlayerComparison playerId={player.id} playerName={`${player.first_name} ${player.last_name}`} open={compareModalOpen} onOpenChange={setCompareModalOpen} />
+    </div>
+  );
+}
+
+// --- Reusable sub-components ---
+
+function DetailLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline gap-4">
+      <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] w-24 shrink-0">{label}</span>
+      <span className="text-sm font-medium text-[var(--text-primary)]">{value}</span>
+    </div>
+  );
+}
+
+function InfoCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">
+      <p className="text-xs text-[var(--text-muted)] mb-1">{label}</p>
+      <p className="text-lg font-bold text-[var(--text-primary)]">{value}</p>
+      {sub && <p className="text-xs text-[var(--text-secondary)] mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function StatsBlock({ label, data, position }: { label: string; data: Record<string, number> | null; position: string }) {
+  if (!data || Object.keys(data).length === 0) {
+    return <p className="text-center text-[var(--text-secondary)] py-8">No stats available.</p>;
+  }
+
+  const posStatCols = getStatsForPosition(position);
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-5 sm:p-6">
+      <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-muted)] mb-4">{label}</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        {posStatCols.map(([key, colLabel]) => {
+          const val = data[key];
+          if (val == null) return null;
+          const isPct = key.endsWith('_pct');
+          return (
+            <div key={key} className="py-2 border-b border-[var(--border)]">
+              <p className="text-xs text-[var(--text-muted)] mb-1">{colLabel}</p>
+              <p className="text-2xl font-bold text-[var(--text-primary)]">{isPct ? `${val}%` : val}</p>
+            </div>
+          );
+        })}
+      </div>
+      {data.games_played != null && (
+        <p className="text-sm text-[var(--text-muted)] mt-4">
+          {data.games_played} game{data.games_played !== 1 ? 's' : ''} played
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CareerTable({
+  years,
+  position,
+  careerTotals,
+}: {
+  years: (Record<string, unknown> & { season_year: number; team_abbr?: string; team_color?: string })[];
+  position: string;
+  careerTotals: Record<string, number> | null;
+}) {
+  const posStatCols = getStatsForPosition(position);
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
+      <div className="p-5 sm:p-6 pb-0">
+        <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-muted)] mb-4">Career Stats</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[var(--border)] text-left">
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Year</th>
+              <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">TM</th>
+              <th className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">GP</th>
+              {posStatCols.map(([, label]) => (
+                <th key={label} className="px-3 py-3 text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {years.map((yr, yi) => (
+              <tr key={`${yr.season_year}-${yr.team_abbr ?? yi}`} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-elevated)] transition-colors">
+                <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">{yr.season_year}</td>
+                <td className="px-3 py-3">
+                  {yr.team_abbr ? (
+                    <span
+                      className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold text-white"
+                      style={{ backgroundColor: yr.team_color ?? 'var(--text-muted)' }}
+                    >
+                      {yr.team_abbr}
+                    </span>
                   ) : (
-                    <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                      <p className="text-sm text-[var(--text-muted)]">No Edge ability.</p>
-                    </div>
+                    <span className="text-[var(--text-muted)]">—</span>
                   )}
+                </td>
+                <td className="px-3 py-3 text-center">{Number(yr.games_played ?? 0)}</td>
+                {posStatCols.map(([colKey, ]) => {
+                  const val = yr[colKey];
+                  const isPct = colKey.endsWith('_pct');
+                  const display = val != null ? (isPct ? `${val}%` : String(val)) : '—';
+                  return (
+                    <td key={colKey} className={`px-3 py-3 text-center ${val != null && Number(val) > 0 ? 'font-semibold' : 'text-[var(--text-muted)]'}`}>
+                      {display}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
 
-                  {abilities.length > 0 ? (
-                    abilities.map((ability) => (
-                      <div key={ability} className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10 border border-purple-500/30">
-                            <Star className="h-5 w-5 text-purple-400" />
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-purple-500/70">Instinct</p>
-                            <p className="font-semibold text-purple-400">{ability}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : !player.edge ? (
-                    <p className="text-sm text-[var(--text-muted)]">No instincts.</p>
-                  ) : null}
-                </div>
-              </div>
-
-              {/* Player Traits */}
-              <div>
-                <h2 className="font-display text-lg uppercase tracking-wider text-[var(--text-primary)] mb-4">
-                  Player Traits
-                </h2>
-                <div className="space-y-3">
-                  <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                    <div className="flex items-center gap-3">
-                      <Brain className="h-5 w-5 text-[var(--text-muted)]" />
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Personality</p>
-                        <p className="font-semibold">{formatLabel(player.personality ?? 'Unknown')}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                    <div className="flex items-center gap-3">
-                      <TrendingUp className="h-5 w-5 text-[var(--text-muted)]" />
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Development</p>
-                        <p className="font-semibold">{getDevelopmentLabel(player.potential)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {player.running_style && (
-                    <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                      <div className="flex items-center gap-3">
-                        <Dumbbell className="h-5 w-5 text-[var(--text-muted)]" />
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Running Style</p>
-                          <p className="font-semibold">{player.running_style}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                    <div className="flex items-center gap-3">
-                      <Award className="h-5 w-5 text-[var(--text-muted)]" />
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Blueprint</p>
-                        <p className="font-semibold">{player.archetype ?? player.position}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {player.handedness && (
-                    <div className="rounded-lg border border-white/5 bg-[var(--bg-elevated)] p-4">
-                      <div className="flex items-center gap-3">
-                        <Target className="h-5 w-5 text-[var(--text-muted)]" />
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Handedness</p>
-                          <p className="font-semibold">{player.handedness}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => navigate('/glossary')}
-                className="text-xs text-[var(--accent-blue)] hover:underline"
-              >
-                View full glossary of Edges, Instincts, Blueprints & Development tiers
-              </button>
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      <FindTradeModal
-        playerId={player.id}
-        playerName={`${player.first_name} ${player.last_name}`}
-        open={tradeModalOpen}
-        onOpenChange={setTradeModalOpen}
-      />
+            {/* Career totals row */}
+            {careerTotals && (
+              <tr className="border-t-2 border-[var(--border)] bg-[var(--bg-elevated)]">
+                <td className="px-4 py-3 font-bold text-[var(--text-primary)]">Career</td>
+                <td className="px-3 py-3"></td>
+                <td className="px-3 py-3 text-center font-bold">{careerTotals.games_played ?? 0}</td>
+                {posStatCols.map(([colKey, ]) => {
+                  const val = careerTotals[colKey];
+                  const isPct = colKey.endsWith('_pct');
+                  const display = val != null ? (isPct ? `${val}%` : String(val)) : '—';
+                  return (
+                    <td key={colKey} className="px-3 py-3 text-center font-bold">
+                      {display}
+                    </td>
+                  );
+                })}
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

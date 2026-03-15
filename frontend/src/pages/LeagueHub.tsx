@@ -6,19 +6,29 @@ import { SocialPostCard } from '@/components/cards/SocialPostCard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TeamBadge } from '@/components/TeamBadge';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Newspaper } from 'lucide-react';
+import {
+  PageLayout,
+  PageHeader,
+  Section,
+  SportsTabs,
+  ContentGrid,
+  MainColumn,
+  SidebarColumn,
+  SidePanel,
+  EmptyBlock,
+} from '@/components/ui/sports-ui';
 
 type TabValue = 'news' | 'recaps' | 'features' | 'columns' | 'morning_blitz' | 'social' | 'rankings';
 
-const tabs: { value: TabValue; label: string }[] = [
-  { value: 'news', label: 'All News' },
-  { value: 'recaps', label: 'Recaps' },
-  { value: 'features', label: 'Features' },
-  { value: 'columns', label: 'Columns' },
-  { value: 'morning_blitz', label: 'Morning Blitz' },
-  { value: 'social', label: 'GridironX' },
-  { value: 'rankings', label: 'Power Rankings' },
+const tabs: { key: TabValue; label: string }[] = [
+  { key: 'news', label: 'All News' },
+  { key: 'recaps', label: 'Recaps' },
+  { key: 'features', label: 'Features' },
+  { key: 'columns', label: 'Columns' },
+  { key: 'morning_blitz', label: 'Morning Blitz' },
+  { key: 'social', label: 'GridironX' },
+  { key: 'rankings', label: 'Power Rankings' },
 ];
 
 export default function LeagueHub() {
@@ -36,50 +46,43 @@ export default function LeagueHub() {
     return articles.filter((a) => a.type === type);
   }
 
+  const statusText = articlesLoading
+    ? 'Loading articles...'
+    : articlesError
+      ? 'Error loading articles'
+      : `${articles.length} articles loaded`;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl">League Hub</h1>
-        <p className="text-sm text-[var(--text-secondary)]">
-          News, social media, and rankings
-          {articlesLoading && ' — Loading articles...'}
-          {articlesError && ' — Error loading articles'}
-          {!articlesLoading && !articlesError && ` — ${articles.length} articles loaded`}
-        </p>
-      </div>
+    <PageLayout>
+      <PageHeader
+        title="League Hub"
+        subtitle={`News, social media, and rankings — ${statusText}`}
+        icon={Newspaper}
+      />
 
-      {/* Tab buttons */}
-      <div className="flex flex-wrap gap-1 rounded-lg bg-[var(--bg-surface)] p-1">
-        {tabs.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => setActiveTab(t.value)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              activeTab === t.value
-                ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-sm'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <SportsTabs
+        tabs={tabs}
+        activeTab={activeTab}
+        onChange={(key) => setActiveTab(key as TabValue)}
+        variant="underline"
+      />
 
-      {/* Tab content */}
-      <div className="space-y-3">
-        {/* Loading state */}
-        {(activeTab !== 'social' && activeTab !== 'rankings' && articlesLoading) && (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <Card key={i} className="border-[var(--border)] bg-[var(--bg-surface)] p-4">
-                <div className="animate-pulse space-y-2">
-                  <div className="h-3 w-20 rounded bg-[var(--bg-elevated)]" />
-                  <div className="h-5 w-3/4 rounded bg-[var(--bg-elevated)]" />
-                  <div className="h-3 w-full rounded bg-[var(--bg-elevated)]" />
-                </div>
-              </Card>
-            ))}
-          </div>
+      <div className="mt-6">
+        {/* Loading state for article tabs */}
+        {activeTab !== 'social' && activeTab !== 'rankings' && articlesLoading && (
+          <Section title="Loading">
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <Card key={i} className="border-[var(--border)] bg-[var(--bg-surface)] p-4">
+                  <div className="animate-pulse space-y-2">
+                    <div className="h-3 w-20 rounded bg-[var(--bg-elevated)]" />
+                    <div className="h-5 w-3/4 rounded bg-[var(--bg-elevated)]" />
+                    <div className="h-3 w-full rounded bg-[var(--bg-elevated)]" />
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </Section>
         )}
         {activeTab === 'social' && socialLoading && (
           <p className="text-sm text-[var(--text-secondary)]">Loading social posts...</p>
@@ -87,105 +90,160 @@ export default function LeagueHub() {
 
         {/* All News */}
         {activeTab === 'news' && !articlesLoading && (
-          <>
+          <Section title="All News" delay={0.05}>
             {articles.length === 0 ? (
-              <EmptyState
+              <EmptyBlock
                 icon={Newspaper}
                 title="No articles yet"
                 description="Play some games to generate news coverage, recaps, and columns."
-                actionLabel="Go to Schedule"
-                actionHref="/schedule"
+                action={{ label: 'Go to Schedule', to: '/schedule' }}
               />
             ) : (
-              articles.map((a) => <ArticleCard key={a.id} article={a} />)
+              <ContentGrid layout="main-sidebar">
+                <MainColumn>
+                  <div className="space-y-3">
+                    {articles.map((a) => <ArticleCard key={a.id} article={a} />)}
+                  </div>
+                  {articlesResp && articlesResp.pages > 1 && (
+                    <div className="flex justify-center gap-2">
+                      <Button size="sm" variant="outline" disabled={articlePage <= 1} onClick={() => setArticlePage((p) => p - 1)}>Prev</Button>
+                      <span className="text-sm text-[var(--text-secondary)] self-center">Page {articlePage} of {articlesResp.pages}</span>
+                      <Button size="sm" variant="outline" disabled={articlePage >= articlesResp.pages} onClick={() => setArticlePage((p) => p + 1)}>Next</Button>
+                    </div>
+                  )}
+                </MainColumn>
+                <SidebarColumn>
+                  {rankings && rankings.length > 0 && (
+                    <SidePanel title="Power Rankings" action={{ label: 'Full Rankings', to: '#' }} delay={0.1}>
+                      <div className="divide-y divide-[var(--border)] -mx-4 -my-4">
+                        {rankings.slice(0, 5).map((r) => (
+                          <div key={r.rank} className="flex items-center gap-3 px-4 py-2.5">
+                            <span className="w-6 text-center font-stat text-xs text-[var(--text-muted)]">{r.rank}</span>
+                            <TeamBadge
+                              abbreviation={r.team.abbreviation}
+                              primaryColor={r.team.primary_color}
+                              secondaryColor={r.team.secondary_color}
+                              size="sm"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold truncate">{r.team.city} {r.team.name}</p>
+                              <p className="text-[10px] text-[var(--text-muted)]">{r.team.wins}-{r.team.losses}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </SidePanel>
+                  )}
+                </SidebarColumn>
+              </ContentGrid>
             )}
-            {articlesResp && articlesResp.pages > 1 && (
-              <div className="flex justify-center gap-2">
-                <Button size="sm" variant="outline" disabled={articlePage <= 1} onClick={() => setArticlePage((p) => p - 1)}>Prev</Button>
-                <span className="text-sm text-[var(--text-secondary)] self-center">Page {articlePage} of {articlesResp.pages}</span>
-                <Button size="sm" variant="outline" disabled={articlePage >= articlesResp.pages} onClick={() => setArticlePage((p) => p + 1)}>Next</Button>
-              </div>
-            )}
-          </>
+          </Section>
         )}
 
         {/* Recaps */}
         {activeTab === 'recaps' && !articlesLoading && (
-          filteredArticles('game_recap').length === 0 ? (
-            <EmptyState icon={Newspaper} title="No game recaps yet" description="Recaps are generated after games are simulated." />
-          ) : (
-            filteredArticles('game_recap').map((a) => <ArticleCard key={a.id} article={a} />)
-          )
+          <Section title="Game Recaps" delay={0.05}>
+            {filteredArticles('game_recap').length === 0 ? (
+              <EmptyBlock icon={Newspaper} title="No game recaps yet" description="Recaps are generated after games are simulated." />
+            ) : (
+              <div className="space-y-3">
+                {filteredArticles('game_recap').map((a) => <ArticleCard key={a.id} article={a} />)}
+              </div>
+            )}
+          </Section>
         )}
 
         {/* Features */}
         {activeTab === 'features' && !articlesLoading && (
-          filteredArticles('feature').length === 0 ? (
-            <EmptyState icon={Newspaper} title="No feature articles yet" description="Feature stories appear as the season progresses." />
-          ) : (
-            filteredArticles('feature').map((a) => <ArticleCard key={a.id} article={a} />)
-          )
+          <Section title="Features" delay={0.05}>
+            {filteredArticles('feature').length === 0 ? (
+              <EmptyBlock icon={Newspaper} title="No feature articles yet" description="Feature stories appear as the season progresses." />
+            ) : (
+              <div className="space-y-3">
+                {filteredArticles('feature').map((a) => <ArticleCard key={a.id} article={a} />)}
+              </div>
+            )}
+          </Section>
         )}
 
         {/* Columns */}
         {activeTab === 'columns' && !articlesLoading && (
-          filteredArticles('column').length === 0 ? (
-            <EmptyState icon={Newspaper} title="No columns yet" description="Columnist opinions appear as the season progresses." />
-          ) : (
-            filteredArticles('column').map((a) => <ArticleCard key={a.id} article={a} />)
-          )
+          <Section title="Columns" delay={0.05}>
+            {filteredArticles('column').length === 0 ? (
+              <EmptyBlock icon={Newspaper} title="No columns yet" description="Columnist opinions appear as the season progresses." />
+            ) : (
+              <div className="space-y-3">
+                {filteredArticles('column').map((a) => <ArticleCard key={a.id} article={a} />)}
+              </div>
+            )}
+          </Section>
         )}
 
         {/* Morning Blitz */}
         {activeTab === 'morning_blitz' && !articlesLoading && (
-          filteredArticles('morning_blitz').length === 0 ? (
-            <EmptyState icon={Newspaper} title="No Morning Blitz yet" description="Morning Blitz shows appear as the season progresses." />
-          ) : (
-            filteredArticles('morning_blitz').map((a) => <ArticleCard key={a.id} article={a} />)
-          )
+          <Section title="Morning Blitz" delay={0.05}>
+            {filteredArticles('morning_blitz').length === 0 ? (
+              <EmptyBlock icon={Newspaper} title="No Morning Blitz yet" description="Morning Blitz shows appear as the season progresses." />
+            ) : (
+              <div className="space-y-3">
+                {filteredArticles('morning_blitz').map((a) => <ArticleCard key={a.id} article={a} />)}
+              </div>
+            )}
+          </Section>
         )}
 
         {/* Social / GridironX */}
         {activeTab === 'social' && !socialLoading && (
-          (!social || social.length === 0) ? (
-            <EmptyState icon={Newspaper} title="No posts yet" description="GridironX posts appear as games are played." />
-          ) : (
-            (social ?? []).map((p) => <SocialPostCard key={p.id} post={p} />)
-          )
+          <Section title="GridironX" delay={0.05}>
+            {(!social || social.length === 0) ? (
+              <EmptyBlock icon={Newspaper} title="No posts yet" description="GridironX posts appear as games are played." />
+            ) : (
+              <div className="space-y-3">
+                {(social ?? []).map((p) => <SocialPostCard key={p.id} post={p} />)}
+              </div>
+            )}
+          </Section>
         )}
 
         {/* Power Rankings */}
         {activeTab === 'rankings' && (
-          rankings && rankings.length > 0 ? (
-            <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-              <CardContent className="p-0">
-                <div className="divide-y divide-[var(--border)]">
-                  {rankings.map((r) => (
-                    <div key={r.rank} className="flex items-center gap-4 px-4 py-3">
-                      <span className="w-8 text-center font-display text-lg text-[var(--text-muted)]">{r.rank}</span>
-                      <TeamBadge
-                        abbreviation={r.team.abbreviation}
-                        primaryColor={r.team.primary_color}
-                        secondaryColor={r.team.secondary_color}
-                        size="md"
-                      />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold">{r.team.city} {r.team.name}</p>
-                        <p className="text-xs text-[var(--text-secondary)]">{r.team.wins}-{r.team.losses}</p>
+          <Section title="Power Rankings" delay={0.05}>
+            {rankings && rankings.length > 0 ? (
+              <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
+                <CardContent className="p-0">
+                  <div className="divide-y divide-[var(--border)]">
+                    {rankings.map((r) => (
+                      <div key={r.rank} className="flex items-center gap-4 px-4 py-3">
+                        <span className="w-8 text-center font-display text-lg text-[var(--text-muted)]">{r.rank}</span>
+                        <TeamBadge
+                          abbreviation={r.team.abbreviation}
+                          primaryColor={r.team.primary_color}
+                          secondaryColor={r.team.secondary_color}
+                          size="md"
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold">{r.team.city} {r.team.name}</p>
+                          <p className="text-xs text-[var(--text-secondary)]">{r.team.wins}-{r.team.losses}</p>
+                        </div>
+                        <span className="font-mono text-sm text-[var(--text-secondary)]">
+                          {r.power_score?.toFixed(1)}
+                        </span>
                       </div>
-                      <span className="font-mono text-sm text-[var(--text-secondary)]">
-                        {r.power_score?.toFixed(1)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <EmptyState icon={Newspaper} title="No rankings yet" description="Power rankings are generated after games are simulated." actionLabel="Go to Schedule" actionHref="/schedule" />
-          )
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <EmptyBlock
+                icon={Newspaper}
+                title="No rankings yet"
+                description="Power rankings are generated after games are simulated."
+                action={{ label: 'Go to Schedule', to: '/schedule' }}
+              />
+            )}
+          </Section>
         )}
       </div>
-    </div>
+    </PageLayout>
   );
 }

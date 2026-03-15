@@ -147,4 +147,74 @@ class CommissionerController
             'submissions' => $submissions,
         ]);
     }
+
+    /**
+     * GET /api/commissioner/activity
+     * Get activity dashboard data for all teams (admin only).
+     */
+    public function activity(): void
+    {
+        $auth = AuthMiddleware::requireAdmin();
+        if (!$auth) return;
+
+        $activity = $this->commissionerService->getActivity($auth['league_id']);
+
+        Response::json([
+            'activity' => $activity,
+        ]);
+    }
+
+    /**
+     * POST /api/commissioner/replace-coach
+     * Replace a coach (toggle human/AI) on a team (admin only).
+     */
+    public function replaceCoach(): void
+    {
+        $auth = AuthMiddleware::requireAdmin();
+        if (!$auth) return;
+
+        $body = Response::getJsonBody();
+
+        if (empty($body['team_id'])) {
+            Response::error('team_id is required');
+            return;
+        }
+
+        if (empty($body['action']) || !in_array($body['action'], ['to_ai', 'to_human'], true)) {
+            Response::error('action is required (to_ai or to_human)');
+            return;
+        }
+
+        $result = $this->commissionerService->replaceCoach(
+            $auth['league_id'],
+            (int) $body['team_id'],
+            $body['action']
+        );
+
+        if (isset($result['error'])) {
+            Response::error($result['error']);
+            return;
+        }
+
+        Response::success($result['message'], $result);
+    }
+
+    /**
+     * POST /api/commissioner/send-reminders
+     * Send reminder notifications to coaches with missing game plans (admin only).
+     */
+    public function sendReminders(): void
+    {
+        $auth = AuthMiddleware::requireAdmin();
+        if (!$auth) return;
+
+        $result = $this->commissionerService->sendReminders($auth['league_id']);
+
+        if (isset($result['error'])) {
+            Response::error($result['error']);
+            return;
+        }
+
+        Response::success($result['message'], ['count' => $result['count']]);
+    }
 }

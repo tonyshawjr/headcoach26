@@ -15,6 +15,7 @@ import {
   useAiStatus, useConfigureAi,
   useGenerateRecap, useGenerateFeature, useGenerateSocial,
 } from '@/hooks/useApi';
+import { PageLayout, PageHeader } from '@/components/ui/sports-ui';
 
 // --- AI Config Section ---
 
@@ -378,25 +379,13 @@ export default function AiStudio() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--accent-blue)]/10">
-            <Sparkles className="h-5 w-5 text-[var(--accent-blue)]" />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl">AI Studio</h1>
-            <p className="text-sm text-[var(--text-secondary)]">
-              Generate AI-powered content for your league
-            </p>
-          </div>
-        </div>
-      </motion.div>
+    <PageLayout>
+      <PageHeader
+        title="AI Studio"
+        subtitle="Generate AI-powered content for your league"
+        icon={Sparkles}
+        accentColor="var(--accent-gold)"
+      />
 
       {/* Config Card */}
       <motion.div
@@ -483,6 +472,6 @@ export default function AiStudio() {
           </CardContent>
         </Card>
       </motion.div>
-    </div>
+    </PageLayout>
   );
 }

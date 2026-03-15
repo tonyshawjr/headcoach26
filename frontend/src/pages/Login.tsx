@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useLogin } from '@/hooks/useApi';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -72,6 +73,13 @@ export default function Login() {
               {login.isPending ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
+
+          <p className="mt-4 text-center text-xs text-[var(--text-muted)]">
+            Don&apos;t have an account?{' '}
+            <Link to="/register" className="text-[var(--accent-blue)] hover:underline">
+              Register
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </div>

@@ -1,7 +1,7 @@
-import { Component, type ReactNode } from 'react';
+import { Component, type ReactNode, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
-import { Sidebar } from './Sidebar';
-import { Navbar } from './Navbar';
+import { TopNav } from './TopNav';
+import { ScoreStrip } from './ScoreStrip';
 import { BreakingTicker } from './BreakingTicker';
 import { useUIStore } from '@/stores/uiStore';
 
@@ -35,22 +35,20 @@ class OutletErrorBoundary extends Component<{ children: ReactNode }, { error: Er
 }
 
 export function AppShell() {
-  const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  useEffect(() => {
+    useUIStore.getState().initTheme();
+  }, []);
 
   return (
-    <div className="h-screen overflow-hidden bg-[var(--bg-primary)]">
-      <Sidebar />
-      <div className={`flex h-full flex-col transition-all duration-300 ${sidebarOpen ? 'pl-60' : 'pl-16'}`}>
-        <Navbar />
-        <BreakingTicker />
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1400px] p-6">
-            <OutletErrorBoundary>
-              <Outlet />
-            </OutletErrorBoundary>
-          </div>
-        </main>
-      </div>
+    <div className="min-h-screen bg-[var(--bg-primary)] pb-10">
+      <ScoreStrip />
+      <TopNav />
+      <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
+        <OutletErrorBoundary>
+          <Outlet />
+        </OutletErrorBoundary>
+      </main>
+      <BreakingTicker />
     </div>
   );
 }

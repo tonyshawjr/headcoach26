@@ -1,16 +1,16 @@
 import { useLegacy, useAwards } from '@/hooks/useApi';
 import { useAuthStore } from '@/stores/authStore';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import {
-  Award as AwardIcon, Trophy, TrendingUp, Calendar,
-  Star, Target, Medal,
+  Award as AwardIcon, Trophy, Calendar,
 } from 'lucide-react';
 import {
   RadialBarChart, RadialBar, PolarAngleAxis,
 } from 'recharts';
+import {
+  PageLayout, PageHeader, Section, StatCard, DataTable,
+  ContentGrid, SidePanel, EmptyBlock,
+} from '@/components/ui/sports-ui';
 
 function getLegacyZone(score: number) {
   if (score >= 90) return { label: 'Legendary', color: '#D4A017' };
@@ -57,7 +57,7 @@ function LegacyGauge({ value }: { value: number }) {
   );
 }
 
-function playoffBadge(result: string) {
+function playoffBadgeClass(result: string) {
   if (!result || result === 'none' || result === '--') return null;
   const map: Record<string, string> = {
     champion: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -68,6 +68,25 @@ function playoffBadge(result: string) {
     missed: 'bg-red-500/20 text-red-400 border-red-500/30',
   };
   return map[result] ?? '';
+}
+
+interface SeasonRow {
+  year: number;
+  team_name: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  playoff_result: string;
+  notable_event: string;
+}
+
+interface AwardRow {
+  id: number;
+  name: string;
+  season_year: number;
+  category: string;
+  recipient: string;
+  description: string;
 }
 
 export default function Legacy() {
@@ -92,43 +111,130 @@ export default function Legacy() {
   const championships = legacy?.championships ?? 0;
   const playoffAppearances = legacy?.playoff_appearances ?? 0;
   const legacyScore = legacy?.legacy_score ?? 0;
-  const seasons = legacy?.seasons ?? [];
+  const seasons: SeasonRow[] = legacy?.seasons ?? [];
   const totalGames = totalWins + totalLosses + totalTies;
   const winPct = totalGames > 0 ? ((totalWins / totalGames) * 100).toFixed(1) : '0.0';
 
+  const seasonColumns = [
+    {
+      key: 'year',
+      label: 'Year',
+      stat: true,
+      render: (row: SeasonRow) => (
+        <span className="font-stat text-sm">{row.year}</span>
+      ),
+    },
+    {
+      key: 'team_name',
+      label: 'Team',
+      render: (row: SeasonRow) => (
+        <span className="text-sm text-[var(--text-secondary)]">{row.team_name}</span>
+      ),
+    },
+    {
+      key: 'record',
+      label: 'Record',
+      stat: true,
+      render: (row: SeasonRow) => (
+        <span className="font-stat text-sm">
+          {row.wins}-{row.losses}{row.ties > 0 ? `-${row.ties}` : ''}
+        </span>
+      ),
+    },
+    {
+      key: 'winpct',
+      label: 'Win %',
+      align: 'right' as const,
+      stat: true,
+      render: (row: SeasonRow) => {
+        const games = row.wins + row.losses + row.ties;
+        const pct = games > 0 ? ((row.wins / games) * 100).toFixed(1) : '0.0';
+        return <span className="font-stat text-sm">{pct}%</span>;
+      },
+    },
+    {
+      key: 'playoff_result',
+      label: 'Playoffs',
+      render: (row: SeasonRow) => {
+        const cls = playoffBadgeClass(row.playoff_result);
+        if (cls === null) {
+          return <span className="text-xs text-[var(--text-muted)]">--</span>;
+        }
+        return (
+          <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+            {row.playoff_result.replace(/_/g, ' ')}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'notable_event',
+      label: 'Notable',
+      render: (row: SeasonRow) => (
+        <span className="text-sm text-[var(--text-secondary)] max-w-xs truncate block">
+          {row.notable_event || '--'}
+        </span>
+      ),
+    },
+  ];
+
   return (
-    <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--accent-gold)]/10">
-            <AwardIcon className="h-5 w-5 text-[var(--accent-gold)]" />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl">Legacy</h1>
-            <p className="text-sm text-[var(--text-secondary)]">
-              {coach?.name}&apos;s coaching career
-            </p>
-          </div>
-        </div>
-      </motion.div>
+    <PageLayout>
+      <PageHeader
+        title="Legacy"
+        subtitle={`${coach?.name}'s coaching career`}
+        icon={AwardIcon}
+        accentColor="var(--accent-gold)"
+      />
 
       {/* Top Row: Legacy Score + Career Stats */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Legacy Gauge */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-        >
-          <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-            <CardContent className="flex flex-col items-center p-6">
-              <h2 className="mb-1 font-display text-sm uppercase tracking-widest text-[var(--text-muted)]">
-                Legacy Score
-              </h2>
+      <ContentGrid layout="main-sidebar" className="mb-6">
+        {/* Career Stats -- Main Column */}
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <StatCard
+              label="Record"
+              value={`${totalWins}-${totalLosses}${totalTies > 0 ? `-${totalTies}` : ''}`}
+              sub={`${winPct}% Win Rate`}
+              accentColor="var(--accent-blue)"
+            />
+            <StatCard
+              label="Championships"
+              value={championships}
+              sub="Titles Won"
+              accentColor="var(--accent-gold)"
+            />
+            <StatCard
+              label="Playoffs"
+              value={playoffAppearances}
+              sub="Appearances"
+              accentColor="#22C55E"
+            />
+            <StatCard
+              label="Seasons"
+              value={seasons.length}
+              sub="Coached"
+              accentColor="var(--accent-blue)"
+            />
+            <StatCard
+              label="Total Wins"
+              value={totalWins}
+              sub="Career Victories"
+              accentColor="#EAB308"
+            />
+            <StatCard
+              label="Awards"
+              value={(awards ?? []).length}
+              sub="Accolades"
+              accentColor="#A855F7"
+            />
+          </div>
+        </div>
+
+        {/* Legacy Gauge -- Sidebar */}
+        <div>
+          <SidePanel title="Legacy Score" accentColor={getLegacyZone(legacyScore).color} delay={0.1}>
+            <div className="flex flex-col items-center">
               <LegacyGauge value={legacyScore} />
               <div className="flex flex-wrap gap-3 mt-4 justify-center">
                 {[
@@ -144,233 +250,73 @@ export default function Legacy() {
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Career Stats */}
-        <motion.div
-          className="lg:col-span-2"
-          initial={{ opacity: 0, x: 10 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
-        >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-              <CardContent className="p-5 text-center">
-                <TrendingUp className="mx-auto h-5 w-5 text-[var(--accent-blue)] mb-2" />
-                <p className="text-xs text-[var(--text-muted)] uppercase">Record</p>
-                <p className="font-display text-2xl mt-1">
-                  {totalWins}-{totalLosses}{totalTies > 0 ? `-${totalTies}` : ''}
-                </p>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">
-                  {winPct}% Win Rate
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-              <CardContent className="p-5 text-center">
-                <Trophy className="mx-auto h-5 w-5 text-[var(--accent-gold)] mb-2" />
-                <p className="text-xs text-[var(--text-muted)] uppercase">Championships</p>
-                <p className="font-display text-2xl text-[var(--accent-gold)] mt-1">
-                  {championships}
-                </p>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">
-                  Titles Won
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-              <CardContent className="p-5 text-center">
-                <Target className="mx-auto h-5 w-5 text-green-400 mb-2" />
-                <p className="text-xs text-[var(--text-muted)] uppercase">Playoffs</p>
-                <p className="font-display text-2xl text-green-400 mt-1">
-                  {playoffAppearances}
-                </p>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">
-                  Appearances
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-              <CardContent className="p-5 text-center">
-                <Calendar className="mx-auto h-5 w-5 text-[var(--text-secondary)] mb-2" />
-                <p className="text-xs text-[var(--text-muted)] uppercase">Seasons</p>
-                <p className="font-display text-2xl mt-1">
-                  {seasons.length}
-                </p>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">
-                  Coached
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-              <CardContent className="p-5 text-center">
-                <Star className="mx-auto h-5 w-5 text-yellow-400 mb-2" />
-                <p className="text-xs text-[var(--text-muted)] uppercase">Total Wins</p>
-                <p className="font-display text-2xl text-yellow-400 mt-1">
-                  {totalWins}
-                </p>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">
-                  Career Victories
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-              <CardContent className="p-5 text-center">
-                <Medal className="mx-auto h-5 w-5 text-purple-400 mb-2" />
-                <p className="text-xs text-[var(--text-muted)] uppercase">Awards</p>
-                <p className="font-display text-2xl text-purple-400 mt-1">
-                  {(awards ?? []).length}
-                </p>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">
-                  Accolades
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </motion.div>
-      </div>
+            </div>
+          </SidePanel>
+        </div>
+      </ContentGrid>
 
       {/* Season History Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.3 }}
-      >
-        <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-          <CardHeader className="pb-2">
-            <CardTitle className="font-display text-base flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-[var(--accent-blue)]" /> Season History
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {seasons.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Calendar className="h-8 w-8 text-[var(--text-muted)] mb-2" />
-                <p className="text-sm text-[var(--text-secondary)]">No seasons completed yet</p>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  Complete your first season to see your coaching history
-                </p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Year</TableHead>
-                    <TableHead>Team</TableHead>
-                    <TableHead>Record</TableHead>
-                    <TableHead>Win %</TableHead>
-                    <TableHead>Playoffs</TableHead>
-                    <TableHead>Notable</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {seasons.map((season, i) => {
-                    const games = season.wins + season.losses + season.ties;
-                    const pct = games > 0 ? ((season.wins / games) * 100).toFixed(1) : '0.0';
-                    return (
-                      <motion.tr
-                        key={`${season.year}-${i}`}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: i * 0.05 }}
-                        className="border-b border-[var(--border)]"
-                      >
-                        <TableCell className="font-display">{season.year}</TableCell>
-                        <TableCell className="text-sm">{season.team_name}</TableCell>
-                        <TableCell className="font-mono">
-                          {season.wins}-{season.losses}{season.ties > 0 ? `-${season.ties}` : ''}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">{pct}%</TableCell>
-                        <TableCell>
-                          {playoffBadge(season.playoff_result) !== null ? (
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] ${playoffBadge(season.playoff_result)}`}
-                            >
-                              {season.playoff_result.replace(/_/g, ' ')}
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-[var(--text-muted)]">--</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-[var(--text-secondary)] max-w-xs truncate">
-                          {season.notable_event || '--'}
-                        </TableCell>
-                      </motion.tr>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
+      <Section title="Season History" accentColor="var(--accent-blue)" delay={0.3} className="mb-6">
+        {seasons.length === 0 ? (
+          <EmptyBlock
+            icon={Calendar}
+            title="No seasons completed yet"
+            description="Complete your first season to see your coaching history."
+          />
+        ) : (
+          <DataTable<SeasonRow>
+            columns={seasonColumns}
+            data={seasons}
+            accentColor="var(--accent-blue)"
+            rowKey={(row) => `${row.year}-${row.team_name}`}
+            striped
+          />
+        )}
+      </Section>
 
       {/* Awards Section */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.4 }}
-      >
-        <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-          <CardHeader className="pb-2">
-            <CardTitle className="font-display text-base flex items-center gap-2">
-              <AwardIcon className="h-4 w-4 text-[var(--accent-gold)]" /> Awards
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {awardsLoading ? (
-              <p className="text-sm text-[var(--text-secondary)]">Loading awards...</p>
-            ) : (awards ?? []).length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <AwardIcon className="h-8 w-8 text-[var(--text-muted)] mb-2" />
-                <p className="text-sm text-[var(--text-secondary)]">No awards won yet</p>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  Lead your team to greatness to earn recognition
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {(awards ?? []).map((award, i) => (
-                  <motion.div
-                    key={award.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3, delay: i * 0.05 }}
-                    className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent-gold)]/10">
-                      <Trophy className="h-4 w-4 text-[var(--accent-gold)]" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{award.name}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <Badge variant="outline" className="text-[10px]">
-                          {award.season_year}
-                        </Badge>
-                        <span className="text-[10px] text-[var(--text-muted)]">
-                          {award.category}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm text-[var(--accent-gold)]">{award.recipient}</p>
-                      <p className="text-[10px] text-[var(--text-muted)]">{award.description}</p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
-    </div>
+      <Section title="Awards" accentColor="var(--accent-gold)" delay={0.4}>
+        {awardsLoading ? (
+          <p className="text-sm text-[var(--text-secondary)]">Loading awards...</p>
+        ) : (awards ?? []).length === 0 ? (
+          <EmptyBlock
+            icon={AwardIcon}
+            title="No awards won yet"
+            description="Lead your team to greatness to earn recognition."
+          />
+        ) : (
+          <div className="space-y-2">
+            {(awards ?? []).map((award: AwardRow, i: number) => (
+              <motion.div
+                key={award.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
+                className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3"
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent-gold)]/10">
+                  <Trophy className="h-4 w-4 text-[var(--accent-gold)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{award.name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="inline-flex items-center rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]">
+                      {award.season_year}
+                    </span>
+                    <span className="text-[10px] text-[var(--text-muted)]">
+                      {award.category}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm text-[var(--accent-gold)]">{award.recipient}</p>
+                  <p className="text-[10px] text-[var(--text-muted)]">{award.description}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </Section>
+    </PageLayout>
   );
 }

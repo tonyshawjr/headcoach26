@@ -12,6 +12,9 @@ RewriteRule ^ - [L]
 # API routes go to front controller
 RewriteRule ^api/ index.php [L]
 
+# Uploaded files (avatars, etc.) go through front controller
+RewriteRule ^uploads/ index.php [L]
+
 # Everything else goes to SPA
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

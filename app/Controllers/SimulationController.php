@@ -44,6 +44,13 @@ class SimulationController
             return;
         }
 
+        // Check if league is paused
+        $commissionerService = new \App\Services\CommissionerService();
+        if ($commissionerService->isLeaguePaused($leagueId)) {
+            Response::error('League is paused by commissioner.');
+            return;
+        }
+
         $currentWeek = (int) $league['current_week'];
         if ($currentWeek < 1) {
             Response::error('League has not started. Advance to week 1 first.');
@@ -60,6 +67,10 @@ class SimulationController
             Response::error("No games to simulate for week {$currentWeek}. Already simulated or no games scheduled.");
             return;
         }
+
+        // Pre-sim: ensure every team playing this week has a healthy QB.
+        // If all QBs are injured, the AI signs the best available free agent QB.
+        $this->ensureTeamsHaveQB($weekGames, $leagueId);
 
         $simEngine = new SimEngine();
         $results = [];
@@ -110,17 +121,51 @@ class SimulationController
                     'fg_attempts' => (int) ($stat['fg_attempts'] ?? 0),
                     'fg_made' => (int) ($stat['fg_made'] ?? 0),
                     'punt_yards' => (int) ($stat['punt_yards'] ?? 0),
+                    'punt_returns' => (int) ($stat['punt_returns'] ?? 0),
+                    'kick_returns' => (int) ($stat['kick_returns'] ?? 0),
+                    'return_yards' => (int) ($stat['return_yards'] ?? 0),
+                    'return_tds' => (int) ($stat['return_tds'] ?? 0),
+                    'penalties' => (int) ($stat['penalties'] ?? 0),
+                    'penalty_yards' => (int) ($stat['penalty_yards'] ?? 0),
                     'grade' => $stat['grade'],
                 ];
 
                 $this->gameStat->create($statRow);
             }
 
-            // Save injuries
+            // Save injuries — strip any extra keys not in the DB schema
+            $injuryColumns = ['player_id', 'team_id', 'type', 'severity', 'weeks_remaining', 'game_id', 'occurred_at'];
             foreach ($result['injuries'] as $inj) {
                 $inj['game_id'] = (int) $game['id'];
-                $this->injury->create($inj);
+                $injRow = array_intersect_key($inj, array_flip($injuryColumns));
+                $this->injury->create($injRow);
                 $allInjuries[] = $inj;
+
+                // Ticker item for in-game star injuries
+                if (!empty($inj['in_game']) && !empty($inj['is_star'])) {
+                    $injPlayer = $this->player->find((int) $inj['player_id']);
+                    if ($injPlayer) {
+                        $injName = $injPlayer['first_name'] . ' ' . $injPlayer['last_name'];
+                        $injPos = $injPlayer['position'];
+                        $injOvr = (int) $injPlayer['overall_rating'];
+                        $injTeam = $this->team->find((int) $inj['team_id']);
+                        $injAbbr = $injTeam['abbreviation'] ?? '???';
+                        $sevLabel = match ($inj['severity']) {
+                            'serious' => 'out ' . $inj['weeks_remaining'] . '+ weeks',
+                            'out' => 'out for the game, week-to-week',
+                            default => 'questionable to return',
+                        };
+                        try {
+                            $this->db->prepare(
+                                "INSERT INTO ticker_items (league_id, type, message, created_at) VALUES (?, 'injury', ?, ?)"
+                            )->execute([
+                                $leagueId,
+                                "INJURY: {$injAbbr} {$injPos} {$injName} ({$injOvr} OVR) — {$inj['type']}, {$sevLabel}",
+                                date('Y-m-d H:i:s'),
+                            ]);
+                        } catch (\Throwable $e) { /* non-critical */ }
+                    }
+                }
             }
 
             // Update team records
@@ -172,6 +217,75 @@ class SimulationController
         // Phase 2 Narrative Layer: arcs, influence, morale, columnist content
         $this->processPhase2Narrative($leagueId, $currentWeek, $weekGames);
 
+        // Milestone checks: playoff clinch, elimination, streaks, trade deadline
+        $milestoneService = new \App\Services\MilestoneService();
+        try {
+            $milestones = $milestoneService->checkMilestones($leagueId, $currentWeek);
+        } catch (\Throwable $e) {
+            error_log("MilestoneService error: " . $e->getMessage());
+            $milestones = [];
+        }
+
+        // Player milestone checks: game-level, season-level, and career-level
+        $playerMilestones = [];
+        try {
+            // Game milestones — check each game's individual player stats
+            foreach ($weekGames as $game) {
+                $gameId = (int) $game['id'];
+                $gameStatModel = new GameStat();
+                $gameStatRows = $gameStatModel->getByGame($gameId);
+                // Re-key by player_id for the milestone checker
+                $statsByPlayer = [];
+                foreach ($gameStatRows as $row) {
+                    $statsByPlayer[(int) $row['player_id']] = $row;
+                }
+                if (!empty($statsByPlayer)) {
+                    $gameMilestones = $milestoneService->checkGameMilestones($leagueId, $currentWeek, $gameId, $statsByPlayer);
+                    $playerMilestones = array_merge($playerMilestones, $gameMilestones);
+                }
+            }
+
+            // Season milestones — cumulative totals across all weeks this season
+            $seasonMilestones = $milestoneService->checkWeeklyMilestones($leagueId, $currentWeek);
+            $playerMilestones = array_merge($playerMilestones, $seasonMilestones);
+
+            // Career milestones — historical_stats + current season totals
+            $careerMilestones = $milestoneService->checkCareerMilestones($leagueId);
+            $playerMilestones = array_merge($playerMilestones, $careerMilestones);
+        } catch (\Throwable $e) {
+            error_log("Player milestones error: " . $e->getMessage());
+        }
+
+        // In-season player development — growth, regression, and OVR recalculation
+        $devResults = ['developed' => 0, 'regressed' => 0];
+        try {
+            $devEngine = new \App\Services\PlayerDevelopmentEngine();
+            $devResults = $devEngine->processWeeklyDevelopment($leagueId, $currentWeek);
+        } catch (\Throwable $e) {
+            error_log("PlayerDevelopmentEngine error: " . $e->getMessage());
+        }
+
+        // Advance college season — prospect stocks rise and fall
+        $draftHeadlines = [];
+        try {
+            $collegeEngine = new \App\Services\CollegeSeasonEngine();
+            $collegeResult = $collegeEngine->advanceWeek($leagueId, $currentWeek);
+            $draftHeadlines = $collegeResult['headlines'] ?? [];
+        } catch (\Throwable $e) {
+            error_log("CollegeSeasonEngine error: " . $e->getMessage());
+        }
+
+        // Mid-season free agent cleanup (after Week 6)
+        $faCleanup = null;
+        if ($currentWeek === 7) {
+            try {
+                $flowEngine = new \App\Services\OffseasonFlowEngine();
+                $faCleanup = $flowEngine->cleanupUnsignedFreeAgents($leagueId, $currentWeek);
+            } catch (\Throwable $e) {
+                error_log("FA cleanup error: " . $e->getMessage());
+            }
+        }
+
         Response::json([
             'message' => "Week {$currentWeek} simulated successfully",
             'success' => true,
@@ -179,12 +293,19 @@ class SimulationController
             'games_simulated' => count($results),
             'results' => $results,
             'total_injuries' => count($allInjuries),
+            'milestones' => $milestones,
+            'player_milestones' => $playerMilestones,
+            'draft_headlines' => $draftHeadlines,
+            'fa_cleanup' => $faCleanup,
         ]);
     }
 
     /**
      * Update a team's win/loss record and point totals.
      */
+    // processWeeklyDevelopment is now handled by PlayerDevelopmentEngine
+    // (called at line 263 via $devEngine->processWeeklyDevelopment())
+
     private function updateTeamRecord(int $teamId, int $teamScore, int $opponentScore): void
     {
         $team = $this->team->find($teamId);
@@ -257,20 +378,17 @@ class SimulationController
                 $freshGame = $this->game->find((int) $game['id']);
                 if ($freshGame && $freshGame['is_simulated']) {
                     // Build the result data the narrative engine expects
+                    $boxScore = json_decode($freshGame['box_score'] ?? '{}', true);
                     $gameResult = [
                         'home_score' => (int) $freshGame['home_score'],
                         'away_score' => (int) $freshGame['away_score'],
                         'turning_point' => $freshGame['turning_point'] ?? '',
-                        'home_stats' => $results[$i]['home']['score'] ?? [],
-                        'away_stats' => $results[$i]['away']['score'] ?? [],
+                        'home_stats' => $boxScore['home']['stats'] ?? [],
+                        'away_stats' => $boxScore['away']['stats'] ?? [],
+                        'box_score' => $boxScore,
+                        'game_log' => $boxScore['game_log'] ?? [],
+                        'game_class' => $boxScore['game_class'] ?? [],
                     ];
-
-                    // Use the box_score stats if stored
-                    $boxScore = json_decode($freshGame['box_score'] ?? '{}', true);
-                    if (!empty($boxScore)) {
-                        $gameResult['home_stats'] = $boxScore['home']['stats'] ?? [];
-                        $gameResult['away_stats'] = $boxScore['away']['stats'] ?? [];
-                    }
 
                     $engine->generateGameContent($freshGame, $gameResult, $seasonId);
                 }
@@ -353,12 +471,178 @@ class SimulationController
             error_log("MoraleEngine error: " . $e->getMessage());
         }
 
-        // 4. Columnist Engine — generate weekly GridironX posts
+        // 4. Player Demand Engine — breakout demands, benched reactions, holdout threats
+        try {
+            $demandEngine = new \App\Services\PlayerDemandEngine();
+            $demandEngine->processWeek($leagueId, $seasonId, $week);
+        } catch (\Throwable $e) {
+            error_log("PlayerDemandEngine error: " . $e->getMessage());
+        }
+
+        // 5. Columnist Engine — generate weekly GridironX posts
         try {
             $columnistEngine = new \App\Services\ColumnistEngine();
             $columnistEngine->generateWeeklyGridironX($leagueId, $seasonId, $week);
         } catch (\Throwable $e) {
             error_log("ColumnistEngine error: " . $e->getMessage());
+        }
+
+        // 5. Fantasy Football — score players, resolve matchups, AI actions
+        try {
+            $fantasyLeagueModel = new \App\Models\FantasyLeague();
+            $fantasyEngine = new \App\Services\FantasyLeagueEngine();
+            $fantasyLeagues = $fantasyLeagueModel->getByLeague($leagueId);
+
+            foreach ($fantasyLeagues as $fl) {
+                if (in_array($fl['status'], ['active', 'playoffs'])) {
+                    $fantasyEngine->processWeek((int) $fl['id'], $week);
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log("FantasyLeagueEngine error: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Before simulating, check every team playing this week has enough healthy
+     * players at each position. If a position is short, the AI promotes backups
+     * from the roster first, then signs the best available free agent —
+     * just like a real NFL team would before game day.
+     */
+    private function ensureTeamsHaveQB(array $weekGames, int $leagueId): void
+    {
+        $db = \App\Database\Connection::getInstance()->getPdo();
+
+        // Minimum starters required per position to field a team
+        $positionMinimums = [
+            'QB' => 1, 'RB' => 1, 'WR' => 2, 'TE' => 1,
+            'OT' => 2, 'OG' => 2, 'C' => 1,
+            'DE' => 2, 'DT' => 1, 'LB' => 2, 'CB' => 2, 'S' => 1,
+            'K' => 1, 'P' => 1,
+        ];
+
+        // Collect all team IDs playing this week
+        $teamIds = [];
+        foreach ($weekGames as $game) {
+            $teamIds[] = (int) $game['home_team_id'];
+            $teamIds[] = (int) $game['away_team_id'];
+        }
+        $teamIds = array_unique($teamIds);
+
+        // Get team info once
+        $teamInfoCache = [];
+        foreach ($teamIds as $tid) {
+            $ts = $db->prepare("SELECT city, name, abbreviation FROM teams WHERE id = ?");
+            $ts->execute([$tid]);
+            $teamInfoCache[$tid] = $ts->fetch();
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        foreach ($teamIds as $teamId) {
+            // Get all injured player IDs for this team
+            $injStmt = $db->prepare(
+                "SELECT player_id FROM injuries WHERE team_id = ? AND weeks_remaining > 0"
+            );
+            $injStmt->execute([$teamId]);
+            $injuredIds = $injStmt->fetchAll(\PDO::FETCH_COLUMN) ?: [];
+
+            foreach ($positionMinimums as $pos => $needed) {
+                // Count healthy players at this position on the roster
+                $healthyStmt = $db->prepare(
+                    "SELECT COUNT(*) FROM players
+                     WHERE team_id = ? AND position = ? AND status = 'active'
+                     AND id NOT IN (
+                         SELECT player_id FROM injuries WHERE team_id = ? AND weeks_remaining > 0
+                     )"
+                );
+                $healthyStmt->execute([$teamId, $pos, $teamId]);
+                $healthyCount = (int) $healthyStmt->fetchColumn();
+
+                if ($healthyCount >= $needed) {
+                    continue;
+                }
+
+                $deficit = $needed - $healthyCount;
+                $team = $teamInfoCache[$teamId] ?? [];
+                $teamAbbr = $team['abbreviation'] ?? '???';
+                $teamName = trim(($team['city'] ?? '') . ' ' . ($team['name'] ?? ''));
+
+                // Sign free agents to fill the gap
+                for ($i = 0; $i < $deficit; $i++) {
+                    $faStmt = $db->prepare(
+                        "SELECT id, first_name, last_name, overall_rating FROM players
+                         WHERE team_id IS NULL AND position = ?
+                         AND (status = 'free_agent' OR status IS NULL)
+                         ORDER BY overall_rating DESC LIMIT 1"
+                    );
+                    $faStmt->execute([$pos]);
+                    $bestFA = $faStmt->fetch();
+
+                    if (!$bestFA) {
+                        error_log("No free agent {$pos} available for {$teamName}");
+                        break;
+                    }
+
+                    $faPlayerId = (int) $bestFA['id'];
+                    $faName = $bestFA['first_name'] . ' ' . $bestFA['last_name'];
+                    $faOvr = (int) $bestFA['overall_rating'];
+
+                    // Sign: assign to team
+                    $db->prepare("UPDATE players SET team_id = ?, status = 'active' WHERE id = ?")
+                        ->execute([$teamId, $faPlayerId]);
+
+                    // League minimum emergency contract
+                    $salary = 1000000;
+                    $db->prepare(
+                        "INSERT INTO contracts (player_id, team_id, salary_annual, cap_hit, years_total,
+                         years_remaining, guaranteed, dead_cap, signing_bonus, base_salary, total_value,
+                         contract_type, status, signed_at)
+                         VALUES (?, ?, ?, ?, 1, 1, 0, 0, 0, ?, ?, 'emergency', 'active', ?)"
+                    )->execute([
+                        $faPlayerId, $teamId, $salary, $salary, $salary, $salary, $now,
+                    ]);
+
+                    // Add to depth chart — find the next open slot for this position
+                    $slotStmt = $db->prepare(
+                        "SELECT COALESCE(MAX(slot), 0) + 1 FROM depth_chart
+                         WHERE team_id = ? AND position_group = ?"
+                    );
+                    $slotStmt->execute([$teamId, $pos]);
+                    $nextSlot = (int) $slotStmt->fetchColumn();
+
+                    // If all starters at this position are injured, put the signing at slot 1
+                    if ($healthyCount === 0 && $i === 0) {
+                        // Push existing slots down
+                        $db->prepare(
+                            "UPDATE depth_chart SET slot = slot + 1
+                             WHERE team_id = ? AND position_group = ?"
+                        )->execute([$teamId, $pos]);
+                        $nextSlot = 1;
+                    }
+
+                    $db->prepare(
+                        "INSERT OR REPLACE INTO depth_chart (team_id, position_group, slot, player_id)
+                         VALUES (?, ?, ?, ?)"
+                    )->execute([$teamId, $pos, $nextSlot, $faPlayerId]);
+
+                    // Ticker item
+                    try {
+                        $db->prepare(
+                            "INSERT INTO ticker_items (league_id, type, message, created_at)
+                             VALUES (?, 'roster', ?, ?)"
+                        )->execute([
+                            $leagueId,
+                            "EMERGENCY SIGNING: {$teamAbbr} signs {$pos} {$faName} ({$faOvr} OVR) — roster need at {$pos}",
+                            $now,
+                        ]);
+                    } catch (\Throwable $e) {
+                        // Non-critical
+                    }
+
+                    error_log("Emergency signing: {$teamName} signed {$pos} {$faName} ({$faOvr} OVR)");
+                }
+            }
         }
     }
 }

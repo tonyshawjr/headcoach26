@@ -39,14 +39,14 @@ class GameStat extends BaseModel
         }
 
         $stmt = $this->db->prepare(
-            "SELECT gs.player_id, p.first_name, p.last_name, p.position, t.abbreviation AS team,
+            "SELECT gs.player_id, p.first_name, p.last_name, p.position, p.image_url, t.abbreviation AS team,
                     SUM(gs.{$stat}) AS total
              FROM {$this->table} gs
              JOIN games g ON g.id = gs.game_id
              JOIN players p ON p.id = gs.player_id
              JOIN teams t ON t.id = p.team_id
              WHERE g.league_id = ? AND g.season_id = ?
-             GROUP BY gs.player_id, p.first_name, p.last_name, p.position, t.abbreviation
+             GROUP BY gs.player_id, p.first_name, p.last_name, p.position, p.image_url, t.abbreviation
              ORDER BY total DESC
              LIMIT ?"
         );

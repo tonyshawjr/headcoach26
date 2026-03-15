@@ -1,9 +1,11 @@
+import { useNavigate } from 'react-router-dom';
 import { useNotifications, useMarkNotificationRead, useMarkAllRead } from '@/hooks/useApi';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
-import { Bell, Check, ArrowLeftRight, Trophy, Zap } from 'lucide-react';
+import { Bell, Check, ArrowLeftRight, Trophy, Zap, ChevronRight } from 'lucide-react';
+import { PageLayout, PageHeader } from '@/components/ui/sports-ui';
 
 interface Notification {
   id: number;
@@ -12,6 +14,89 @@ interface Notification {
   body: string;
   is_read: boolean;
   created_at: string;
+  data?: string;
+}
+
+/** Parse the JSON data field and determine where clicking should navigate */
+function getNotificationLink(n: Notification): string | null {
+  // Try parsing the JSON data field for player_id
+  let parsed: Record<string, unknown> = {};
+  try {
+    const raw = n.data;
+    if (raw && typeof raw === 'string' && raw !== '[]' && raw !== '{}') {
+      parsed = JSON.parse(raw);
+    } else if (raw && typeof raw === 'object') {
+      parsed = raw as Record<string, unknown>;
+    }
+  } catch { /* ignore */ }
+
+  const playerId = parsed.player_id as number | undefined;
+
+  // Player-specific notifications → always go to the player's profile
+  if (playerId) {
+    return `/player/${playerId}`;
+  }
+
+  // Use both parsed type and notification type for routing
+  const innerType = (parsed.type as string) ?? '';
+  const nType = n.type ?? '';
+
+  // Player demand notifications — should have player_id but fallback to roster
+  if (nType === 'player_demand' || innerType === 'contract_demand' || innerType === 'low_morale'
+    || innerType === 'benched_reaction' || innerType === 'extension_request' || innerType === 'holdout') {
+    return '/my-team';
+  }
+
+  switch (innerType || nType) {
+    case 'trade':
+      return '/trades';
+    case 'trade_deadline_approaching':
+    case 'trade_deadline_passed':
+      return '/trades';
+    case 'playoff_clinch':
+    case 'playoff_elimination':
+      return '/standings';
+    case 'game_result':
+      return '/schedule';
+    case 'win_streak':
+    case 'loss_streak':
+      return '/my-team';
+    case 'reminder':
+      return '/my-team?tab=depth';
+    default:
+      return null;
+  }
+}
+
+/** Based on notification type, figure out the right fallback */
+function getNotificationLinkFromTitle(n: Notification): string | null {
+  const title = n.title.toLowerCase();
+  if (title.includes('trade deadline')) return '/my-team';
+  if (title.includes('morale') || title.includes('unhappy')) {
+    // Try to get player_id from data
+    try {
+      const d = JSON.parse(n.data ?? '{}');
+      if (d.player_id) return `/player/${d.player_id}`;
+    } catch { /* */ }
+    return '/my-team';
+  }
+  if (title.includes('contract')) {
+    try {
+      const d = JSON.parse(n.data ?? '{}');
+      if (d.player_id) return `/player/${d.player_id}`;
+    } catch { /* */ }
+    return '/my-team';
+  }
+  if (title.includes('clinch') || title.includes('playoff') || title.includes('elimination')) return '/standings';
+  if (title.includes('streak')) return '/my-team';
+  if (title.includes('injury')) {
+    try {
+      const d = JSON.parse(n.data ?? '{}');
+      if (d.player_id) return `/player/${d.player_id}`;
+    } catch { /* */ }
+    return '/my-team';
+  }
+  return null;
 }
 
 function typeIcon(type: string) {
@@ -74,6 +159,7 @@ function formatTime(dateStr: string) {
 }
 
 export default function NotificationsPage() {
+  const navigate = useNavigate();
   const { data, isLoading } = useNotifications();
   const markReadMut = useMarkNotificationRead();
   const markAllMut = useMarkAllRead();
@@ -86,6 +172,11 @@ export default function NotificationsPage() {
   function handleClick(n: Notification) {
     if (!n.is_read) {
       markReadMut.mutate(n.id);
+    }
+    // Navigate contextually
+    const link = getNotificationLink(n) ?? getNotificationLinkFromTitle(n);
+    if (link) {
+      navigate(link);
     }
   }
 
@@ -105,26 +196,14 @@ export default function NotificationsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--accent-blue)]/10">
-              <Bell className="h-5 w-5 text-[var(--accent-blue)]" />
-            </div>
-            <div>
-              <h1 className="font-display text-2xl">Notifications</h1>
-              <p className="text-sm text-[var(--text-secondary)]">
-                {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
-              </p>
-            </div>
-          </div>
-          {unreadCount > 0 && (
+    <PageLayout>
+      <PageHeader
+        title="Notifications"
+        subtitle={unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
+        icon={Bell}
+        accentColor="var(--accent-blue)"
+        actions={
+          unreadCount > 0 ? (
             <Button
               variant="outline"
               size="sm"
@@ -134,9 +213,9 @@ export default function NotificationsPage() {
               <Check className="mr-1 h-3.5 w-3.5" />
               Mark All Read
             </Button>
-          )}
-        </div>
-      </motion.div>
+          ) : undefined
+        }
+      />
 
       {/* Notifications */}
       {notifications.length === 0 ? (
@@ -201,10 +280,15 @@ export default function NotificationsPage() {
                             </p>
                           </div>
 
-                          {/* Time */}
-                          <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
-                            {formatTime(n.created_at)}
-                          </span>
+                          {/* Time + link indicator */}
+                          <div className="shrink-0 flex flex-col items-end gap-1">
+                            <span className="text-[10px] text-[var(--text-muted)]">
+                              {formatTime(n.created_at)}
+                            </span>
+                            {(getNotificationLink(n) ?? getNotificationLinkFromTitle(n)) && (
+                              <ChevronRight className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                            )}
+                          </div>
                         </CardContent>
                       </Card>
                     </motion.div>
@@ -215,6 +299,6 @@ export default function NotificationsPage() {
           })}
         </div>
       )}
-    </div>
+    </PageLayout>
   );
 }

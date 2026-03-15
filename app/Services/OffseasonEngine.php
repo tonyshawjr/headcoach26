@@ -24,20 +24,17 @@ class OffseasonEngine
      */
     public function processOffseason(int $leagueId, int $seasonYear): array
     {
-        $summary = [];
-
         // 1. Season Awards
         $awards = $this->calculateAwards($leagueId, $seasonYear);
-        $summary['awards'] = $awards;
 
         // 2. Player aging & development
         $devChanges = $this->processPlayerDevelopment($leagueId);
-        $summary['player_changes'] = count($devChanges);
-        $summary['retirements'] = count(array_filter($devChanges, fn($c) => $c['type'] === 'retired'));
+        $improved = array_filter($devChanges, fn($c) => $c['type'] === 'improved');
+        $declined = array_filter($devChanges, fn($c) => $c['type'] === 'declined');
+        $retired = array_filter($devChanges, fn($c) => $c['type'] === 'retired');
 
         // 3. Contract expirations
-        $expired = $this->processContractExpirations($leagueId);
-        $summary['contracts_expired'] = $expired;
+        $expiredContracts = $this->processContractExpirations($leagueId);
 
         // 4. Coach career tracking
         $this->recordCoachHistory($leagueId, $seasonYear);
@@ -45,25 +42,50 @@ class OffseasonEngine
         // 5. Coaching staff changes
         $staffEngine = new CoachingStaffEngine();
         $staffChanges = $staffEngine->processOffseason($leagueId);
-        $summary['staff_changes'] = count($staffChanges);
 
-        // 6. Generate draft class for next season
+        // 6. Recalculate draft order based on final standings (worst record = #1 pick)
         $draftEngine = new DraftEngine();
+        $draftEngine->recalculateDraftOrder($leagueId);
+
+        // 7. Generate draft class for next season
         $classId = $draftEngine->generateDraftClass($leagueId, $seasonYear + 1);
-        $summary['draft_class_id'] = $classId;
+        $draftClassSize = 0;
+        if ($classId) {
+            $stmt = $this->db->prepare("SELECT COUNT(*) FROM draft_prospects WHERE draft_class_id = ?");
+            $stmt->execute([$classId]);
+            $draftClassSize = (int) $stmt->fetchColumn();
+        }
 
         // 7. Reset team records for new season
         $this->resetTeamRecords($leagueId);
 
         // 8. Create new season
         $newSeasonId = $this->createNewSeason($leagueId, $seasonYear + 1);
-        $summary['new_season_id'] = $newSeasonId;
-        $summary['new_year'] = $seasonYear + 1;
 
-        // 9. Update legacy scores
+        // 9. Generate schedule for new season
+        $scheduleGames = $this->generateNewSeasonSchedule($leagueId, $newSeasonId);
+
+        // 10. Generate free agents for new season
+        $freeAgentsGenerated = $this->generateFreeAgents($leagueId);
+
+        // 11. Update legacy scores
         $this->updateLegacyScores($leagueId);
 
-        return $summary;
+        return [
+            'awards' => $awards,
+            'development' => [
+                'improved' => array_values($improved),
+                'declined' => array_values($declined),
+                'retired' => array_values($retired),
+            ],
+            'contracts_expired' => $expiredContracts,
+            'draft_class_size' => $draftClassSize,
+            'schedule_games' => $scheduleGames,
+            'free_agents_generated' => $freeAgentsGenerated,
+            'new_season_year' => $seasonYear + 1,
+            'new_season_id' => $newSeasonId,
+            'staff_changes' => count($staffChanges),
+        ];
     }
 
     /**
@@ -207,8 +229,35 @@ class OffseasonEngine
             }
 
             $newRating = max(40, min(99, $p['overall_rating'] + $ratingChange));
-            $this->db->prepare("UPDATE players SET age = ?, overall_rating = ? WHERE id = ?")
-                ->execute([$newAge, $newRating, $p['id']]);
+
+            // Also adjust individual attributes proportionally
+            $attrUpdate = '';
+            $attrValues = [];
+            if ($ratingChange !== 0) {
+                $attrCols = ['speed','strength','awareness','acceleration','agility',
+                    'throw_accuracy_short','throw_accuracy_mid','throw_accuracy_deep','throw_power',
+                    'bc_vision','break_tackle','catching','short_route_running','medium_route_running',
+                    'deep_route_running','pass_block','run_block','block_shedding','finesse_moves',
+                    'power_moves','man_coverage','zone_coverage','press','play_recognition',
+                    'pursuit','tackle','hit_power','kick_accuracy','kick_power'];
+                $sets = [];
+                foreach ($attrCols as $col) {
+                    $val = $p[$col] ?? null;
+                    if ($val !== null && (int) $val > 0) {
+                        // Each attribute shifts by the rating change ± small random noise
+                        $attrShift = $ratingChange + mt_rand(-1, 1);
+                        $newVal = max(30, min(99, (int) $val + $attrShift));
+                        $sets[] = "{$col} = {$newVal}";
+                    }
+                }
+                if (!empty($sets)) {
+                    $attrUpdate = ', ' . implode(', ', $sets);
+                }
+            }
+
+            $this->db->exec(
+                "UPDATE players SET age = {$newAge}, overall_rating = {$newRating}{$attrUpdate} WHERE id = {$p['id']}"
+            );
 
             if ($ratingChange !== 0) {
                 $changes[] = [
@@ -242,10 +291,21 @@ class OffseasonEngine
         foreach ($contracts as $c) {
             $yearsLeft = $c['years_remaining'] - 1;
             if ($yearsLeft <= 0) {
-                // Contract expired — player goes to free agency
+                // Contract expired
                 $this->db->prepare("UPDATE contracts SET status = 'expired', years_remaining = 0 WHERE id = ?")
                     ->execute([$c['id']]);
-                $faEngine->releasePlayer($leagueId, $c['player_id']);
+
+                // Check if player qualifies as RFA (years_pro <= 3)
+                $stmtP = $this->db->prepare("SELECT years_pro FROM players WHERE id = ?");
+                $stmtP->execute([$c['player_id']]);
+                $yearsPro = (int) ($stmtP->fetchColumn() ?: 0);
+
+                if ($yearsPro > 0 && $yearsPro <= 3 && $c['team_id']) {
+                    // Restricted free agent -- original team retains rights
+                    $faEngine->releaseAsRestricted($leagueId, $c['player_id'], (int) $c['team_id']);
+                } else {
+                    $faEngine->releasePlayer($leagueId, $c['player_id']);
+                }
                 $expired++;
             } else {
                 $this->db->prepare("UPDATE contracts SET years_remaining = ? WHERE id = ?")
@@ -365,11 +425,187 @@ class OffseasonEngine
         }
     }
 
+    private function generateNewSeasonSchedule(int $leagueId, int $newSeasonId): int
+    {
+        $stmt = $this->db->prepare(
+            "SELECT id, city, name, abbreviation, conference, division FROM teams WHERE league_id = ?"
+        );
+        $stmt->execute([$leagueId]);
+        $teams = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        if (count($teams) < 2) {
+            return 0;
+        }
+
+        $schedGen = new ScheduleGenerator();
+        $schedule = $schedGen->generate($leagueId, $newSeasonId, $teams);
+
+        foreach ($schedule as $g) {
+            $cols = implode(', ', array_keys($g));
+            $placeholders = implode(', ', array_fill(0, count($g), '?'));
+            $stmt = $this->db->prepare("INSERT INTO games ({$cols}) VALUES ({$placeholders})");
+            $stmt->execute(array_values($g));
+        }
+
+        return count($schedule);
+    }
+
+    private function generateFreeAgents(int $leagueId): int
+    {
+        $generator = new PlayerGenerator();
+        $count = 0;
+
+        $positionCounts = [
+            'QB' => 3, 'RB' => 5, 'WR' => 8, 'TE' => 3,
+            'OT' => 4, 'OG' => 4, 'C' => 2,
+            'DE' => 4, 'DT' => 3, 'LB' => 5,
+            'CB' => 4, 'S' => 3, 'K' => 2, 'P' => 2,
+        ];
+
+        $firstNames = [
+            'Marcus', 'Jaylen', 'DeShawn', 'Tyler', 'Caleb', 'Brandon', 'Trevon', 'Malik',
+            'Darius', 'Xavier', 'Antonio', 'Cameron', 'Isaiah', 'Jalen', 'Terrell', 'Davon',
+            'Khalil', 'Jamal', 'Derek', 'Corey', 'Travis', 'Jordan', 'Andre', 'Damien',
+            'Mitchell', 'Ryan', 'Jake', 'Cody', 'Hunter', 'Austin', 'Cole', 'Garrett',
+            'Carson', 'Connor', 'Nolan', 'Blake', 'Chase', 'Wyatt', 'Luke', 'Grant',
+            'Dante', 'Keith', 'Jerome', 'Rodney', 'Cedric', 'Troy', 'Darren', 'Preston',
+            'Elijah', 'Micah', 'Josiah', 'Ezekiel', 'Aaron', 'Nathan', 'Ethan', 'Amari',
+        ];
+        $lastNames = [
+            'Webb', 'Jackson', 'Rodriguez', 'Patterson', 'Williams', 'Brown', 'Davis', 'Johnson',
+            'Wilson', 'Thompson', 'Anderson', 'Taylor', 'Thomas', 'Harris', 'Clark', 'Lewis',
+            'Robinson', 'Walker', 'Young', 'Allen', 'King', 'Wright', 'Scott', 'Green',
+            'Baker', 'Adams', 'Nelson', 'Hill', 'Campbell', 'Mitchell', 'Roberts', 'Carter',
+            'Phillips', 'Evans', 'Turner', 'Torres', 'Parker', 'Collins', 'Edwards', 'Stewart',
+            'Cooper', 'Reed', 'Bailey', 'Bell', 'Howard', 'Ward', 'Cox', 'Watson',
+            'Brooks', 'Bennett', 'Gray', 'James', 'Hughes', 'Price', 'Long', 'Foster',
+        ];
+
+        $rosterPool = $generator->generateForTeam(0, $leagueId);
+        $poolByPosition = [];
+        foreach ($rosterPool as $p) {
+            $poolByPosition[$p['position']][] = $p;
+        }
+
+        foreach ($positionCounts as $pos => $num) {
+            for ($i = 0; $i < $num; $i++) {
+                if (!empty($poolByPosition[$pos])) {
+                    $template = $poolByPosition[$pos][array_rand($poolByPosition[$pos])];
+                } else {
+                    $template = $rosterPool[array_rand($rosterPool)];
+                    $template['position'] = $pos;
+                }
+
+                $overall = mt_rand(55, 82);
+                $age = mt_rand(23, 32);
+
+                $template['team_id'] = null;
+                $template['first_name'] = $firstNames[array_rand($firstNames)];
+                $template['last_name'] = $lastNames[array_rand($lastNames)];
+                $template['overall_rating'] = $overall;
+                $template['status'] = 'free_agent';
+                $template['age'] = $age;
+                $template['experience'] = max(0, $age - 22);
+                $template['years_pro'] = max(0, $age - 22);
+                $template['jersey_number'] = mt_rand(1, 99);
+                $template['birthdate'] = sprintf('%04d-%02d-%02d', date('Y') - $age, mt_rand(1, 12), mt_rand(1, 28));
+                $template['created_at'] = date('Y-m-d H:i:s');
+
+                $cols = implode(', ', array_keys($template));
+                $placeholders = implode(', ', array_fill(0, count($template), '?'));
+                $stmt = $this->db->prepare("INSERT INTO players ({$cols}) VALUES ({$placeholders})");
+                $stmt->execute(array_values($template));
+                $playerId = (int) $this->db->lastInsertId();
+
+                $marketValue = $this->calculateFreeAgentMarketValue($pos, $overall, $age);
+
+                $this->db->prepare(
+                    "INSERT INTO free_agents (league_id, player_id, asking_salary, market_value, status, released_at)
+                     VALUES (?, ?, ?, ?, 'available', ?)"
+                )->execute([$leagueId, $playerId, $marketValue, $marketValue, date('Y-m-d H:i:s')]);
+
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    private function calculateFreeAgentMarketValue(string $position, int $overall, int $age): int
+    {
+        $base = 500000;
+        $ratingBonus = pow($overall / 100, 2) * 15000000;
+        $positionMultiplier = match ($position) {
+            'QB' => 2.5, 'DE' => 1.4, 'CB' => 1.3, 'WR' => 1.3, 'OT' => 1.2,
+            'LB' => 1.1, 'DT' => 1.1, 'RB' => 1.0, 'TE' => 1.0, 'S' => 1.0,
+            'OG' => 0.9, 'C' => 0.9, 'K' => 0.5, 'P' => 0.4, 'LS' => 0.3,
+            default => 1.0,
+        };
+        $ageFactor = $age <= 26 ? 1.1 : ($age >= 31 ? 0.7 : 1.0);
+        return max($base, (int) ($ratingBonus * $positionMultiplier * $ageFactor));
+    }
+
     private function saveAward(int $leagueId, int $year, string $type, string $winnerType, int $winnerId, string $stats): void
     {
         $this->db->prepare(
             "INSERT INTO season_awards (league_id, season_year, award_type, winner_type, winner_id, stats)
              VALUES (?, ?, ?, ?, ?, ?)"
         )->execute([$leagueId, $year, $type, $winnerType, $winnerId, $stats]);
+    }
+
+    /**
+     * Get season awards for the most recent completed season.
+     */
+    public function getAwards(int $leagueId): array
+    {
+        // Find the most recent season year that has awards
+        $stmt = $this->db->prepare(
+            "SELECT sa.award_type, sa.winner_type, sa.winner_id, sa.stats, sa.season_year,
+                    CASE WHEN sa.winner_type = 'player'
+                        THEN (SELECT p.first_name || ' ' || p.last_name FROM players p WHERE p.id = sa.winner_id)
+                        ELSE NULL END AS player_name,
+                    CASE WHEN sa.winner_type = 'coach'
+                        THEN (SELECT c.name FROM coaches c WHERE c.id = sa.winner_id)
+                        ELSE NULL END AS coach_name
+             FROM season_awards sa
+             WHERE sa.league_id = ?
+             ORDER BY sa.season_year DESC, sa.id ASC"
+        );
+        $stmt->execute([$leagueId]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Get coach legacy / career stats.
+     */
+    public function getCoachLegacy(int $coachId): ?array
+    {
+        // Get legacy score
+        $stmt = $this->db->prepare("SELECT * FROM legacy_scores WHERE coach_id = ?");
+        $stmt->execute([$coachId]);
+        $legacy = $stmt->fetch();
+
+        // Get career history
+        $stmt = $this->db->prepare(
+            "SELECT ch.*, t.city, t.name as team_name, t.abbreviation
+             FROM coach_history ch
+             JOIN teams t ON ch.team_id = t.id
+             WHERE ch.coach_id = ?
+             ORDER BY ch.season_year DESC"
+        );
+        $stmt->execute([$coachId]);
+        $history = $stmt->fetchAll();
+
+        if (!$legacy && empty($history)) {
+            return null;
+        }
+
+        return [
+            'legacy' => $legacy ?: [
+                'total_score' => 0, 'total_wins' => 0, 'total_losses' => 0,
+                'championships' => 0, 'playoff_appearances' => 0, 'seasons_completed' => 0,
+            ],
+            'history' => $history,
+        ];
     }
 }

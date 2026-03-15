@@ -4,9 +4,67 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Head Coach 26 — Premium dark sports broadcast theme */
+/* Head Coach 26 — Light/Dark theme system */
+
+/* Light theme (default) */
 :root {
   /* Game-specific tokens */
+  --bg-primary: #f5f7fa;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f0f2f5;
+  --bg-glass: rgba(255, 255, 255, 0.85);
+  --text-primary: #1a1a2e;
+  --text-secondary: #5a5f7a;
+  --text-muted: #9ca3af;
+  --accent-red: #dc2626;
+  --accent-gold: #ca8a04;
+  --accent-blue: #2563eb;
+  --team-primary: #2563eb;
+  --team-secondary: #1a1a2e;
+
+  --surface-glow: rgba(37, 99, 235, 0.06);
+  --border-subtle: rgba(0, 0, 0, 0.08);
+
+  /* shadcn/ui tokens — light theme */
+  --background: #f5f7fa;
+  --foreground: #1a1a2e;
+  --card: #ffffff;
+  --card-foreground: #1a1a2e;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a2e;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f2f5;
+  --secondary-foreground: #1a1a2e;
+  --muted: #f0f2f5;
+  --muted-foreground: #5a5f7a;
+  --accent: #f0f2f5;
+  --accent-foreground: #1a1a2e;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e2e5eb;
+  --input: #e2e5eb;
+  --ring: #2563eb;
+  --radius: 0.5rem;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1a1a2e;
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0f2f5;
+  --sidebar-accent-foreground: #1a1a2e;
+  --sidebar-border: #e2e5eb;
+  --sidebar-ring: #2563eb;
+
+  --chart-1: #2563eb;
+  --chart-2: #ca8a04;
+  --chart-3: #dc2626;
+  --chart-4: #60a5fa;
+  --chart-5: #9ca3af;
+}
+
+/* Dark theme */
+.dark {
   --bg-primary: #0a0e14;
   --bg-surface: #111820;
   --bg-elevated: #1a2230;
@@ -20,11 +78,9 @@
   --team-primary: #2188FF;
   --team-secondary: #FFFFFF;
 
-  /* Broadcast-style surface accents */
   --surface-glow: rgba(33, 136, 255, 0.06);
   --border-subtle: rgba(48, 54, 61, 0.6);
 
-  /* shadcn/ui tokens — mapped to our dark theme */
   --background: #0a0e14;
   --foreground: #F0F6FC;
   --card: #111820;
@@ -44,7 +100,6 @@
   --border: #1e2a3a;
   --input: #1e2a3a;
   --ring: #2188FF;
-  --radius: 0.5rem;
 
   --sidebar: #0d1218;
   --sidebar-foreground: #F0F6FC;
@@ -123,13 +178,14 @@
 
   html {
     @apply font-sans;
+    font-size: 18px;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Custom scrollbar for the broadcast feel */
+  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
   }
@@ -137,11 +193,17 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--border);
+    background: #d1d5db;
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
+    background: #9ca3af;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: #1e2a3a;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #484F58;
   }
 }
 
@@ -151,9 +213,8 @@
   font-weight: 700;
 }
 
-/* Monospaced stat numbers */
+/* Stat numbers — same font as body, just tabular so columns align */
 @utility font-stat {
-  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
@@ -170,6 +231,25 @@
   -webkit-backdrop-filter: blur(12px);
 }
 
+/* Form input fields */
+.input-field {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input-field:focus {
+  border-color: var(--accent-blue);
+}
+.input-field::placeholder {
+  color: var(--text-muted);
+}
+
 /* Score display — large broadcast numbers */
 @utility score-display {
   font-family: 'Oswald', sans-serif;
@@ -177,3 +257,34 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
+
+/* Dashboard button styles */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  background: var(--accent-blue);
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: white;
+  transition: opacity 0.15s;
+}
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:disabled { opacity: 0.5; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  transition: background-color 0.15s;
+}
+.btn-secondary:hover { background: var(--bg-elevated); }
+.btn-secondary:disabled { opacity: 0.5; }

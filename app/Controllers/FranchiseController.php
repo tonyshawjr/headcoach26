@@ -82,12 +82,22 @@ class FranchiseController
 
             // Delete all game data in FK-safe order
             $tablesToClear = [
-                'game_stats', 'games', 'depth_chart', 'injuries', 'contracts',
-                'fa_bids', 'free_agents', 'trade_items', 'trades', 'trade_block',
+                // Dependent/child tables first
+                'game_plan_submissions', 'game_stats', 'games',
+                'depth_chart', 'injuries', 'contracts',
+                'fa_bids', 'free_agents',
+                'trade_reviews', 'trade_items', 'trades', 'trade_block',
                 'draft_picks', 'draft_prospects', 'draft_classes',
-                'coaching_staff', 'coach_history', 'legacy_scores', 'season_awards',
+                'coaching_staff', 'coach_history', 'coach_career_history',
+                'legacy_scores', 'season_awards', 'milestone_tracking',
+                'media_ratings', 'narrative_arcs',
+                'ai_generations', 'roster_imports',
+                'articles', 'social_posts', 'ticker_items',
+                'press_conferences', 'notifications',
+                'league_messages', 'league_invites',
+                'commissioner_settings',
+                // Core tables last
                 'players', 'coaches', 'seasons', 'teams', 'leagues',
-                'articles', 'press_conferences', 'notifications', 'messages',
             ];
 
             // Disable FK checks for clean wipe
@@ -112,6 +122,10 @@ class FranchiseController
             } else {
                 $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
             }
+
+            // Player headshot images are kept across restarts since
+            // the same real players get re-imported from Madden.
+            // Images only need re-fetching if a player has no image_url after import.
 
             // Create League with unique slug
             $slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '-', $leagueName)) . '-' . time();
@@ -139,7 +153,7 @@ class FranchiseController
                     "INSERT INTO teams (league_id, city, name, abbreviation, conference, division,
                      primary_color, secondary_color, logo_emoji, overall_rating, salary_cap, cap_used,
                      wins, losses, ties, points_for, points_against, streak, home_field_advantage, morale)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 75, 225000000, 0, 0, 0, 0, 0, 0, '', ?, 70)"
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 75, 301200000, 0, 0, 0, 0, 0, 0, '', ?, 70)"
                 );
                 $hfa = mt_rand(2, 5);
                 $stmt->execute([
@@ -161,10 +175,13 @@ class FranchiseController
                 $archetype = $isHuman ? null : $archetypes[array_rand($archetypes)];
                 $name = $isHuman ? $coachName : TeamsSeeder::generateCoachName();
 
+                $gmPersonalities = ['aggressive', 'conservative', 'analytics', 'old_school', 'balanced'];
+                $gmPersonality = $isHuman ? 'balanced' : $gmPersonalities[array_rand($gmPersonalities)];
+
                 $stmt = $pdo->prepare(
                     "INSERT INTO coaches (league_id, team_id, user_id, name, is_human, archetype,
-                     influence, job_security, media_rating, contract_years, contract_salary, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 50, 3, 5000000, ?)"
+                     influence, job_security, media_rating, contract_years, contract_salary, gm_personality, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 50, 3, 5000000, ?, ?)"
                 );
                 $stmt->execute([
                     $leagueId, $tId,
@@ -172,6 +189,7 @@ class FranchiseController
                     $name, $isHuman, $archetype,
                     $isHuman ? 50 : mt_rand(40, 70),
                     $isHuman ? 70 : mt_rand(50, 80),
+                    $gmPersonality,
                     $now,
                 ]);
 
@@ -189,6 +207,46 @@ class FranchiseController
                 $placeholders = implode(', ', array_fill(0, count($g), '?'));
                 $stmt = $pdo->prepare("INSERT INTO games ({$cols}) VALUES ({$placeholders})");
                 $stmt->execute(array_values($g));
+            }
+
+            // Generate Draft Classes and Picks (current year + next 2 years)
+            $currentYear = 2026;
+            for ($yr = $currentYear; $yr <= $currentYear + 2; $yr++) {
+                $stmt = $pdo->prepare(
+                    "INSERT INTO draft_classes (league_id, year, status, created_at) VALUES (?, ?, ?, ?)"
+                );
+                $dcStatus = ($yr === $currentYear) ? 'upcoming' : 'future';
+                $stmt->execute([$leagueId, $yr, $dcStatus, $now]);
+                $draftClassId = (int) $pdo->lastInsertId();
+
+                // Each team gets 7 picks (rounds 1-7)
+                $pickNumber = 1;
+                for ($round = 1; $round <= 7; $round++) {
+                    // Randomize pick order within each round (simulates prior season standings)
+                    $shuffledTeamIds = $teamIds;
+                    shuffle($shuffledTeamIds);
+                    foreach ($shuffledTeamIds as $tId) {
+                        $stmt = $pdo->prepare(
+                            "INSERT INTO draft_picks (league_id, draft_class_id, round, pick_number, original_team_id, current_team_id, is_used)
+                             VALUES (?, ?, ?, ?, ?, ?, 0)"
+                        );
+                        $stmt->execute([$leagueId, $draftClassId, $round, $pickNumber, $tId, $tId]);
+                        $pickNumber++;
+                    }
+                }
+            }
+
+            // Generate draft prospects for the upcoming class
+            try {
+                $draftEngine = new \App\Services\DraftEngine();
+                $upcomingClassId = $pdo->query(
+                    "SELECT id FROM draft_classes WHERE league_id = {$leagueId} AND status = 'upcoming' LIMIT 1"
+                )->fetchColumn();
+                if ($upcomingClassId) {
+                    $draftEngine->generateProspectsForClass((int) $upcomingClassId);
+                }
+            } catch (\Exception $e) {
+                // Don't fail franchise setup if prospect generation fails
             }
 
             // Update session
@@ -262,10 +320,50 @@ class FranchiseController
             // Generate free agents
             $faCreated = $this->generateFreeAgentPool($pdo, $generator, $leagueId, $freeAgentCount);
 
+            // Try real NFL contracts from Over The Cap, fall back to generated
+            $contractStats = ['contracts_created' => 0, 'matched' => 0, 'unmatched' => 0];
+            try {
+                $realImporter = new \App\Services\RealContractImporter();
+                $contractStats = $realImporter->importRealContracts($leagueId);
+                $contractStats['contracts_created'] = ($contractStats['matched'] ?? 0) + ($contractStats['unmatched'] ?? 0);
+            } catch (\Exception $e) {
+                try {
+                    $contractEngine = new \App\Services\ContractEngine();
+                    $contractStats = $contractEngine->generateAllContracts($leagueId);
+                } catch (\Exception $e2) {}
+            }
+
+            // Assign player images — cache first (instant), then ESPN for remaining
+            $imagesAssigned = 0;
+            try {
+                $imageService = new \App\Services\PlayerImageService();
+                $cacheResult = $imageService->assignFromCache($pdo, $leagueId);
+                $imagesAssigned = $cacheResult['assigned'] ?? 0;
+
+                // Download from ESPN for any still missing
+                $imgResult = $imageService->assignImages($pdo, $leagueId);
+                $imagesAssigned += $imgResult['espn_matched'] ?? 0;
+            } catch (\Exception $e) {
+                // Don't fail if image fetch fails
+            }
+
+            // Generate historical career stats for all players
+            $historicalStats = 0;
+            try {
+                $histGen = new \App\Services\HistoricalStatsGenerator();
+                $histResult = $histGen->generateForLeague($leagueId);
+                $historicalStats = $histResult['generated'] ?? 0;
+            } catch (\Exception $e) {
+                error_log("Historical stats generation error: " . $e->getMessage());
+            }
+
             Response::json([
                 'success' => true,
                 'players_created' => $totalPlayers,
                 'free_agents_created' => $faCreated,
+                'contracts_created' => $contractStats['contracts_created'],
+                'images_assigned' => $imagesAssigned,
+                'historical_stats' => $historicalStats,
             ]);
         } catch (\Exception $e) {
             Response::error('Roster generation failed: ' . $e->getMessage(), 500);
@@ -373,10 +471,20 @@ class FranchiseController
         $now = date('Y-m-d H:i:s');
         $pool = [];
 
+        // Temporarily disable FK checks for free agent inserts (team_id will be NULL)
+        $isSqlite = Connection::getInstance()->isSqlite();
+        if ($isSqlite) {
+            $pdo->exec("PRAGMA foreign_keys = OFF");
+        } else {
+            $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+        }
+
         while ($created < $count) {
             // Refill the pool when empty by generating a fake team's worth of players
             if (empty($pool)) {
-                $pool = $generator->generateForTeam(0, $leagueId);
+                // Use a real team ID to avoid FK issues during generation, then override
+                $anyTeamId = (int) ($pdo->query("SELECT id FROM teams WHERE league_id = {$leagueId} LIMIT 1")->fetchColumn() ?: 0);
+                $pool = $generator->generateForTeam($anyTeamId ?: 0, $leagueId);
                 shuffle($pool);
             }
 
@@ -410,6 +518,13 @@ class FranchiseController
             $stmt->execute([$leagueId, $playerId, $marketValue, $marketValue, $now]);
 
             $created++;
+        }
+
+        // Re-enable FK checks
+        if ($isSqlite) {
+            $pdo->exec("PRAGMA foreign_keys = ON");
+        } else {
+            $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
         }
 
         return $created;

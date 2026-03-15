@@ -18,6 +18,7 @@ import {
   useValidateImport, useImportRoster, useImportHistory, useImportMaddenRoster,
 } from '@/hooks/useApi';
 import type { MaddenImportResult } from '@/api/client';
+import { PageLayout, PageHeader } from '@/components/ui/sports-ui';
 
 // --- CSV Template ---
 
@@ -347,25 +348,13 @@ export default function RosterImport() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--accent-blue)]/10">
-            <FileSpreadsheet className="h-5 w-5 text-[var(--accent-blue)]" />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl">Roster Import</h1>
-            <p className="text-sm text-[var(--text-secondary)]">
-              Import player data from CSV or JSON files
-            </p>
-          </div>
-        </div>
-      </motion.div>
+    <PageLayout>
+      <PageHeader
+        title="Roster Import"
+        subtitle="Import player data from CSV or JSON files"
+        icon={FileSpreadsheet}
+        accentColor="var(--accent-blue)"
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Upload Section */}
@@ -717,6 +706,6 @@ export default function RosterImport() {
           </CardContent>
         </Card>
       </motion.div>
-    </div>
+    </PageLayout>
   );
 }

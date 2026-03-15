@@ -8,7 +8,7 @@ class Coach extends BaseModel
 
     public function getByTeam(int $teamId): array
     {
-        $stmt = $this->db->prepare("SELECT * FROM {$this->table} WHERE team_id = ? ORDER BY role ASC");
+        $stmt = $this->db->prepare("SELECT * FROM {$this->table} WHERE team_id = ? ORDER BY id ASC");
         $stmt->execute([$teamId]);
         return $stmt->fetchAll();
     }

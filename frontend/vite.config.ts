@@ -14,6 +14,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8082',
       '/install': 'http://localhost:8082',
+      '/uploads': 'http://localhost:8082',
     },
   },
   build: {

@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TeamBadge } from '@/components/TeamBadge';
-import { franchiseApi } from '@/api/client';
+import { franchiseApi, rosterImportApi } from '@/api/client';
 import type { SetupTeam } from '@/api/client';
 import { toast } from 'sonner';
 import {
@@ -13,11 +13,6 @@ import {
 } from 'lucide-react';
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
-
-const DEFAULT_CONF_NAMES: Record<string, string> = {
-  AC: 'Atlantic Conference',
-  PC: 'Pacific Conference',
-};
 
 const TEAM_COUNT_OPTIONS = [4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32];
 
@@ -108,7 +103,7 @@ function EditableLabel({ value, onChange, className = '' }: { value: string; onC
 // ─── Main Setup Page ─────────────────────────────────────────────────────────
 
 export default function FranchiseSetup() {
-  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [step, setStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -133,6 +128,7 @@ export default function FranchiseSetup() {
   const [rosterMode, setRosterMode] = useState<'generate' | 'import'>('generate');
   const [newLeagueId, setNewLeagueId] = useState<number | null>(null);
   const [setupComplete, setSetupComplete] = useState(false);
+  const [generateFreeAgentsOnImport, setGenerateFreeAgentsOnImport] = useState(true);
 
   // Load config
   useEffect(() => {
@@ -199,6 +195,8 @@ export default function FranchiseSetup() {
     setIsProcessing(true);
     try {
       const res = await franchiseApi.restart(leagueName, teamCount, selectedTeamIdx, coachName.trim());
+      // Clear all cached data from the old franchise
+      queryClient.clear();
       setNewLeagueId(res.league_id);
       setStep(4);
     } catch (err: any) {
@@ -214,6 +212,7 @@ export default function FranchiseSetup() {
     try {
       const res = await franchiseApi.generateRoster(newLeagueId, 150);
       toast.success(`Created ${res.players_created} players and ${res.free_agents_created} free agents`);
+      queryClient.clear();
       setSetupComplete(true);
     } catch (err: any) {
       toast.error(err.message || 'Failed to generate roster');
@@ -611,8 +610,23 @@ export default function FranchiseSetup() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <Badge variant="outline" className="text-[10px]">Real player data</Badge>
                 <Badge variant="outline" className="text-[10px]">Auto name conversion</Badge>
-                <Badge variant="outline" className="text-[10px]">+ Free agents after</Badge>
               </div>
+              {rosterMode === 'import' && (
+                <label
+                  className="mt-4 flex items-center gap-2.5 cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={generateFreeAgentsOnImport}
+                    onChange={(e) => setGenerateFreeAgentsOnImport(e.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-white/5 text-blue-500 focus:ring-blue-500/30"
+                  />
+                  <span className="text-sm text-[var(--text-secondary)]">
+                    Also generate free agent pool (150 players)
+                  </span>
+                </label>
+              )}
             </button>
           </div>
 
@@ -626,8 +640,28 @@ export default function FranchiseSetup() {
                 )}
               </Button>
             ) : (
-              <Button onClick={() => navigate('/roster-import')} className="gap-2">
-                Go to Roster Import <ChevronRight className="h-4 w-4" />
+              <Button
+                disabled={isProcessing}
+                onClick={async () => {
+                  setIsProcessing(true);
+                  try {
+                    const res = await rosterImportApi.importMadden();
+                    toast.success(`Imported ${res.imported} players from Madden 26`);
+                    queryClient.clear();
+                    setSetupComplete(true);
+                  } catch (err: any) {
+                    toast.error(err.message || 'Failed to import Madden roster');
+                  } finally {
+                    setIsProcessing(false);
+                  }
+                }}
+                className="gap-2"
+              >
+                {isProcessing ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Importing Madden Roster...</>
+                ) : (
+                  <>Import Madden 26 Roster <ChevronRight className="h-4 w-4" /></>
+                )}
               </Button>
             )}
           </div>
@@ -644,7 +678,7 @@ export default function FranchiseSetup() {
           <p className="mt-2 text-sm text-[var(--text-secondary)]">
             Your league, teams, rosters, and free agent pool are all set. Time to coach.
           </p>
-          <Button onClick={() => { window.location.href = '/'; }} className="mt-6 gap-2">
+          <Button onClick={() => { queryClient.clear(); window.location.href = '/'; }} className="mt-6 gap-2">
             <Trophy className="h-4 w-4" /> Start Coaching
           </Button>
         </div>

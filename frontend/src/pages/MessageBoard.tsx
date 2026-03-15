@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Send, Pin } from 'lucide-react';
+import { PageHeader } from '@/components/ui/sports-ui';
 
 interface Message {
   id: number;
@@ -77,26 +78,12 @@ export default function MessageBoard() {
 
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col space-y-4">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--accent-blue)]/10">
-              <MessageSquare className="h-5 w-5 text-[var(--accent-blue)]" />
-            </div>
-            <div>
-              <h1 className="font-display text-2xl">Message Board</h1>
-              <p className="text-sm text-[var(--text-secondary)]">
-                Chat with your league
-              </p>
-            </div>
-          </div>
-        </div>
-      </motion.div>
+      <PageHeader
+        title="Message Board"
+        subtitle="Chat with your league"
+        icon={MessageSquare}
+        accentColor="var(--accent-blue)"
+      />
 
       {/* Channel Tabs */}
       <Tabs value={channel} onValueChange={setChannel}>

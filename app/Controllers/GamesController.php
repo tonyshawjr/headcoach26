@@ -9,6 +9,7 @@ use App\Models\GameStat;
 use App\Models\Team;
 use App\Models\Player;
 use App\Models\League;
+use App\Database\Connection;
 
 class GamesController
 {
@@ -205,6 +206,7 @@ class GamesController
                 ? $player['first_name'] . ' ' . $player['last_name']
                 : 'Unknown';
             $stat['player_position'] = $player['position'] ?? '';
+            $stat['image_url'] = $player['image_url'] ?? null;
 
             if ((int) $stat['team_id'] === (int) $game['home_team_id']) {
                 $homeStats[] = $stat;
@@ -219,6 +221,7 @@ class GamesController
                 'pass_yards' => 0, 'rush_yards' => 0, 'total_yards' => 0,
                 'pass_tds' => 0, 'rush_tds' => 0, 'rec_tds' => 0,
                 'turnovers' => 0, 'sacks' => 0, 'tackles' => 0,
+                'penalties' => 0, 'penalty_yards' => 0,
             ];
             foreach ($stats as $s) {
                 $totals['pass_yards'] += (int) ($s['pass_yards'] ?? 0);
@@ -229,12 +232,17 @@ class GamesController
                 $totals['turnovers'] += (int) ($s['interceptions'] ?? 0);
                 $totals['sacks'] += (float) ($s['sacks'] ?? 0);
                 $totals['tackles'] += (int) ($s['tackles'] ?? 0);
+                $totals['penalties'] += (int) ($s['penalties'] ?? 0);
+                $totals['penalty_yards'] += (int) ($s['penalty_yards'] ?? 0);
             }
             $totals['total_yards'] = $totals['pass_yards'] + $totals['rush_yards'];
             return $totals;
         };
 
         $grades = $game['player_grades'] ? json_decode($game['player_grades'], true) : [];
+        $boxScoreJson = $game['box_score'] ? json_decode($game['box_score'], true) : [];
+        $gameLog = $boxScoreJson['game_log'] ?? [];
+        $gameClass = $boxScoreJson['game_class'] ?? null;
 
         // Normalize player stat fields: frontend reads 'name' and 'position'
         $normalizePlayerStats = function (array $stats): array {
@@ -271,6 +279,34 @@ class GamesController
                 'players' => $normalizePlayerStats($awayStats),
             ],
             'grades' => $grades,
+            'game_log' => $gameLog,
+            'game_class' => $gameClass,
         ]);
+    }
+
+    /**
+     * GET /api/games/{id}/articles
+     * Get game recap articles for a specific game.
+     */
+    public function articles(array $params): void
+    {
+        $auth = AuthMiddleware::handle();
+        if (!$auth) return;
+
+        $gameId = (int) $params['id'];
+        $game = $this->game->find($gameId);
+        if (!$game) {
+            Response::notFound('Game not found');
+            return;
+        }
+
+        $db = Connection::getInstance()->getPdo();
+        $stmt = $db->prepare(
+            "SELECT * FROM articles WHERE game_id = ? AND type = 'game_recap' ORDER BY published_at DESC"
+        );
+        $stmt->execute([$gameId]);
+        $articles = $stmt->fetchAll();
+
+        Response::json(['articles' => $articles]);
     }
 }

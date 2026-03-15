@@ -5,7 +5,9 @@ import {
   useLeagueMembers, useReviewTrade, useForceAdvance,
   useSubmissionStatus, useTrades,
   useInvites, useCreateInvite, useCancelInvite,
+  useActivity, useReplaceCoach, useSendReminders,
 } from '@/hooks/useApi';
+import type { ActivityRecord } from '@/api/client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,8 +16,9 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { motion } from 'framer-motion';
-import { Shield, Users, Settings, ArrowLeftRight, Send, Copy, Clock } from 'lucide-react';
+import { Shield, Users, Settings, ArrowLeftRight, Send, Copy, Clock, Activity, Bell, Play, AlertTriangle, UserX, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { PageLayout, PageHeader } from '@/components/ui/sports-ui';
 
 interface Member {
   id: number;
@@ -29,14 +32,15 @@ interface Member {
 }
 
 interface CommSettings {
-  trade_review_mode: string;
+  trade_review: string;
   trade_deadline_week: number;
-  salary_cap_enabled: boolean;
+  salary_cap_enabled: number;
+  salary_cap: number;
   max_roster_size: number;
-  injured_reserve_slots: number;
-  allow_ai_trades: boolean;
-  force_advance_enabled: boolean;
-  submission_deadline_hours: number;
+  allow_ai_trades: number;
+  force_advance_enabled: number;
+  game_plan_deadline_hours: number;
+  league_paused: number;
   [key: string]: unknown;
 }
 
@@ -70,10 +74,24 @@ function SettingsTab() {
   // Populate form when settings load
   const effectiveForm = { ...settings, ...form };
 
+  const isPaused = Boolean(Number(effectiveForm.league_paused));
+
   function handleSave() {
     updateMut.mutate(form, {
       onSuccess: () => {
         toast.success('Settings updated');
+        setForm({});
+      },
+      onError: (err) => toast.error(err.message),
+    });
+  }
+
+  function handleTogglePause() {
+    const newVal = !isPaused;
+    const updates = { league_paused: newVal ? 1 : 0 };
+    updateMut.mutate(updates, {
+      onSuccess: () => {
+        toast.success(newVal ? 'League paused' : 'League resumed');
         setForm({});
       },
       onError: (err) => toast.error(err.message),
@@ -86,6 +104,28 @@ function SettingsTab() {
 
   return (
     <div className="space-y-4">
+      {/* Pause Warning Banner */}
+      {isPaused && (
+        <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-400" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-yellow-400">League is Paused</p>
+            <p className="text-xs text-yellow-400/70">
+              Week advancement and simulation are disabled until the league is resumed.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleTogglePause}
+            disabled={updateMut.isPending}
+            className="bg-yellow-600 hover:bg-yellow-700 text-white"
+          >
+            <Play className="mr-1 h-3.5 w-3.5" />
+            Resume
+          </Button>
+        </div>
+      )}
+
       <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 font-display text-base">
@@ -98,8 +138,8 @@ function SettingsTab() {
           <div className="grid grid-cols-2 items-center gap-4">
             <label className="text-sm text-[var(--text-secondary)]">Trade Review Mode</label>
             <Select
-              value={String(effectiveForm.trade_review_mode ?? 'commissioner')}
-              onValueChange={(v) => setForm((f) => ({ ...f, trade_review_mode: v }))}
+              value={String(effectiveForm.trade_review ?? 'commissioner')}
+              onValueChange={(v) => setForm((f) => ({ ...f, trade_review: v }))}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -138,15 +178,15 @@ function SettingsTab() {
             />
           </div>
 
-          {/* Submission Deadline Hours */}
+          {/* Game Plan Deadline Hours */}
           <div className="grid grid-cols-2 items-center gap-4">
-            <label className="text-sm text-[var(--text-secondary)]">Submission Deadline (hours)</label>
+            <label className="text-sm text-[var(--text-secondary)]">Game Plan Deadline (hours)</label>
             <input
               type="number"
               min={1}
               max={168}
-              value={Number(effectiveForm.submission_deadline_hours ?? 24)}
-              onChange={(e) => setForm((f) => ({ ...f, submission_deadline_hours: Number(e.target.value) }))}
+              value={Number(effectiveForm.game_plan_deadline_hours ?? 24)}
+              onChange={(e) => setForm((f) => ({ ...f, game_plan_deadline_hours: Number(e.target.value) }))}
               className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-1.5 text-sm text-[var(--text-primary)]"
             />
           </div>
@@ -155,13 +195,13 @@ function SettingsTab() {
           <div className="grid grid-cols-2 items-center gap-4">
             <label className="text-sm text-[var(--text-secondary)]">Salary Cap Enabled</label>
             <button
-              onClick={() => setForm((f) => ({ ...f, salary_cap_enabled: !effectiveForm.salary_cap_enabled }))}
+              onClick={() => setForm((f) => ({ ...f, salary_cap_enabled: Number(effectiveForm.salary_cap_enabled ?? 1) ? 0 : 1 }))}
               className={`h-8 w-14 rounded-full transition-colors ${
-                effectiveForm.salary_cap_enabled ? 'bg-[var(--accent-blue)]' : 'bg-[var(--bg-elevated)]'
+                Number(effectiveForm.salary_cap_enabled ?? 1) ? 'bg-[var(--accent-blue)]' : 'bg-[var(--bg-elevated)]'
               }`}
             >
               <div className={`h-6 w-6 rounded-full bg-white transition-transform ${
-                effectiveForm.salary_cap_enabled ? 'translate-x-7' : 'translate-x-1'
+                Number(effectiveForm.salary_cap_enabled ?? 1) ? 'translate-x-7' : 'translate-x-1'
               }`} />
             </button>
           </div>
@@ -170,13 +210,29 @@ function SettingsTab() {
           <div className="grid grid-cols-2 items-center gap-4">
             <label className="text-sm text-[var(--text-secondary)]">Allow AI Trades</label>
             <button
-              onClick={() => setForm((f) => ({ ...f, allow_ai_trades: !effectiveForm.allow_ai_trades }))}
+              onClick={() => setForm((f) => ({ ...f, allow_ai_trades: Number(effectiveForm.allow_ai_trades ?? 1) ? 0 : 1 }))}
               className={`h-8 w-14 rounded-full transition-colors ${
-                effectiveForm.allow_ai_trades ? 'bg-[var(--accent-blue)]' : 'bg-[var(--bg-elevated)]'
+                Number(effectiveForm.allow_ai_trades ?? 1) ? 'bg-[var(--accent-blue)]' : 'bg-[var(--bg-elevated)]'
               }`}
             >
               <div className={`h-6 w-6 rounded-full bg-white transition-transform ${
-                effectiveForm.allow_ai_trades ? 'translate-x-7' : 'translate-x-1'
+                Number(effectiveForm.allow_ai_trades ?? 1) ? 'translate-x-7' : 'translate-x-1'
+              }`} />
+            </button>
+          </div>
+
+          {/* Pause League */}
+          <div className="grid grid-cols-2 items-center gap-4">
+            <label className="text-sm text-[var(--text-secondary)]">Pause League</label>
+            <button
+              onClick={handleTogglePause}
+              disabled={updateMut.isPending}
+              className={`h-8 w-14 rounded-full transition-colors ${
+                isPaused ? 'bg-yellow-500' : 'bg-[var(--bg-elevated)]'
+              }`}
+            >
+              <div className={`h-6 w-6 rounded-full bg-white transition-transform ${
+                isPaused ? 'translate-x-7' : 'translate-x-1'
               }`} />
             </button>
           </div>
@@ -352,6 +408,7 @@ function TradeReviewTab() {
 function SubmissionsTab() {
   const { data, isLoading } = useSubmissionStatus();
   const forceAdvanceMut = useForceAdvance();
+  const remindersMut = useSendReminders();
   const submissions = (data as Submission[] | undefined) ?? [];
   const submitted = submissions.filter((s) => s.submitted).length;
   const total = submissions.length;
@@ -359,6 +416,20 @@ function SubmissionsTab() {
   function handleForceAdvance() {
     forceAdvanceMut.mutate(undefined, {
       onSuccess: () => toast.success('Week advanced'),
+      onError: (err) => toast.error(err.message),
+    });
+  }
+
+  function handleSendReminders() {
+    remindersMut.mutate(undefined, {
+      onSuccess: (data) => {
+        const count = (data as { count?: number })?.count ?? 0;
+        if (count === 0) {
+          toast.success('All coaches have submitted their game plans');
+        } else {
+          toast.success(`Sent ${count} reminder${count === 1 ? '' : 's'}`);
+        }
+      },
       onError: (err) => toast.error(err.message),
     });
   }
@@ -376,15 +447,27 @@ function SubmissionsTab() {
               <Clock className="h-4 w-4 text-[var(--accent-blue)]" />
               Game Plan Submissions ({submitted}/{total})
             </CardTitle>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleForceAdvance}
-              disabled={forceAdvanceMut.isPending}
-              className="text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/10"
-            >
-              {forceAdvanceMut.isPending ? 'Advancing...' : 'Force Advance'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSendReminders}
+                disabled={remindersMut.isPending}
+                className="text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
+              >
+                <Bell className="mr-1 h-3.5 w-3.5" />
+                {remindersMut.isPending ? 'Sending...' : 'Send Reminders'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleForceAdvance}
+                disabled={forceAdvanceMut.isPending}
+                className="text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/10"
+              >
+                {forceAdvanceMut.isPending ? 'Advancing...' : 'Force Advance'}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -435,6 +518,191 @@ function SubmissionsTab() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ActivityTab() {
+  const { data, isLoading } = useActivity();
+  const replaceCoachMut = useReplaceCoach();
+  const activity = (data as ActivityRecord[] | undefined) ?? [];
+  const [confirmAction, setConfirmAction] = useState<{ teamId: number; action: 'to_ai' | 'to_human'; teamName: string } | null>(null);
+
+  function handleReplace(teamId: number, action: 'to_ai' | 'to_human') {
+    replaceCoachMut.mutate(
+      { teamId, action },
+      {
+        onSuccess: (data) => {
+          toast.success((data as { message?: string })?.message ?? 'Coach replaced');
+          setConfirmAction(null);
+        },
+        onError: (err) => {
+          toast.error(err.message);
+          setConfirmAction(null);
+        },
+      },
+    );
+  }
+
+  const statusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return (
+          <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-400 border-green-500/30">
+            Active
+          </Badge>
+        );
+      case 'inactive':
+        return (
+          <Badge variant="outline" className="text-[10px] bg-yellow-500/10 text-yellow-400 border-yellow-500/30">
+            Inactive
+          </Badge>
+        );
+      case 'absent':
+        return (
+          <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-400 border-red-500/30">
+            Absent
+          </Badge>
+        );
+      default:
+        return null;
+    }
+  };
+
+  if (isLoading) {
+    return <div className="flex h-32 items-center justify-center text-sm text-[var(--text-secondary)]">Loading activity...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Confirmation Dialog */}
+      {confirmAction && (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-400" />
+              <p className="text-sm text-yellow-400">
+                {confirmAction.action === 'to_ai'
+                  ? `Replace ${confirmAction.teamName} coach with AI?`
+                  : `Open ${confirmAction.teamName} for a human coach?`
+                }
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmAction(null)}
+                className="h-7"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => handleReplace(confirmAction.teamId, confirmAction.action)}
+                disabled={replaceCoachMut.isPending}
+                className={confirmAction.action === 'to_ai'
+                  ? 'h-7 bg-red-600 hover:bg-red-700'
+                  : 'h-7 bg-green-600 hover:bg-green-700'
+                }
+              >
+                {replaceCoachMut.isPending ? 'Processing...' : 'Confirm'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 font-display text-base">
+            <Activity className="h-4 w-4 text-[var(--accent-blue)]" />
+            Coach Activity Monitor
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {activity.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Activity className="h-8 w-8 text-[var(--text-muted)] mb-2" />
+              <p className="text-sm text-[var(--text-secondary)]">No activity data available</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Team</TableHead>
+                  <TableHead>Coach</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-center">Plans Submitted</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activity.map((a) => (
+                  <TableRow key={a.team_id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{a.team_emoji}</span>
+                        <span className="text-sm font-medium">{a.team_name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">{a.coach_name}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] ${
+                          a.is_human
+                            ? 'bg-green-500/10 text-green-400 border-green-500/30'
+                            : 'bg-gray-500/10 text-gray-400 border-gray-500/30'
+                        }`}
+                      >
+                        {a.is_human ? 'Human' : 'AI'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className="text-sm">
+                        {a.plans_submitted}
+                        {a.games_played > 0 && (
+                          <span className="text-[var(--text-muted)]">/{a.games_played}</span>
+                        )}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {statusBadge(a.status)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {a.is_human ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-red-400 border-red-500/30 hover:bg-red-500/10"
+                          onClick={() => setConfirmAction({ teamId: a.team_id, action: 'to_ai', teamName: a.team_name })}
+                          disabled={replaceCoachMut.isPending}
+                        >
+                          <UserX className="mr-1 h-3 w-3" />
+                          Replace with AI
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-green-400 border-green-500/30 hover:bg-green-500/10"
+                          onClick={() => setConfirmAction({ teamId: a.team_id, action: 'to_human', teamName: a.team_name })}
+                          disabled={replaceCoachMut.isPending}
+                        >
+                          <UserCheck className="mr-1 h-3 w-3" />
+                          Open to Human
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -577,25 +845,13 @@ export default function CommissionerPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--accent-blue)]/10">
-            <Shield className="h-5 w-5 text-[var(--accent-blue)]" />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl">Commissioner Tools</h1>
-            <p className="text-sm text-[var(--text-secondary)]">
-              Manage your league settings, members, and trades
-            </p>
-          </div>
-        </div>
-      </motion.div>
+    <PageLayout>
+      <PageHeader
+        title="Commissioner Tools"
+        subtitle="Manage your league settings, members, and trades"
+        icon={Shield}
+        accentColor="var(--accent-blue)"
+      />
 
       {/* Tabs */}
       <Tabs defaultValue="settings">
@@ -611,6 +867,9 @@ export default function CommissionerPage() {
           </TabsTrigger>
           <TabsTrigger value="submissions">
             <Clock className="mr-1 h-3.5 w-3.5" /> Submissions
+          </TabsTrigger>
+          <TabsTrigger value="activity">
+            <Activity className="mr-1 h-3.5 w-3.5" /> Activity
           </TabsTrigger>
         </TabsList>
 
@@ -630,7 +889,11 @@ export default function CommissionerPage() {
         <TabsContent value="submissions" className="mt-4">
           <SubmissionsTab />
         </TabsContent>
+
+        <TabsContent value="activity" className="mt-4">
+          <ActivityTab />
+        </TabsContent>
       </Tabs>
-    </div>
+    </PageLayout>
   );
 }

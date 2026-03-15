@@ -6,6 +6,7 @@ use App\Database\Connection;
 use App\Helpers\Response;
 use App\Middleware\AuthMiddleware;
 use App\Services\TradeEngine;
+use App\Services\CommissionerService;
 
 class TradeController
 {
@@ -16,6 +17,33 @@ class TradeController
     {
         $this->tradeEngine = new TradeEngine();
         $this->db = Connection::getInstance()->getPdo();
+    }
+
+    /**
+     * Check if the trade deadline has passed for this league.
+     * Returns true if trades are blocked (deadline has passed).
+     */
+    private function isTradeDeadlinePassed(int $leagueId): bool
+    {
+        $stmt = $this->db->prepare("SELECT current_week, phase FROM leagues WHERE id = ?");
+        $stmt->execute([$leagueId]);
+        $league = $stmt->fetch();
+
+        if (!$league || $league['phase'] !== 'regular') {
+            // Only enforce during regular season — no trades in playoffs/offseason either
+            $phase = $league['phase'] ?? 'unknown';
+            if (in_array($phase, ['playoffs', 'offseason', 'preseason'], true)) {
+                return true;
+            }
+            return false;
+        }
+
+        $currentWeek = (int) $league['current_week'];
+        $commish = new CommissionerService();
+        $settings = $commish->getSettings($leagueId);
+        $deadlineWeek = (int) ($settings['trade_deadline_week'] ?? 12);
+
+        return $currentWeek > $deadlineWeek;
     }
 
     /**
@@ -48,6 +76,11 @@ class TradeController
     {
         $auth = AuthMiddleware::handle();
         if (!$auth) return;
+
+        if ($this->isTradeDeadlinePassed($auth['league_id'])) {
+            Response::error('The trade deadline has passed. No trades can be made this season.', 403);
+            return;
+        }
 
         $body = Response::getJsonBody();
 
@@ -94,24 +127,83 @@ class TradeController
             $receivingItems
         );
 
-        // Have AI immediately evaluate and respond
         if (isset($trade['trade_id'])) {
-            $aiDecision = $this->tradeEngine->aiEvaluateTrade($trade['trade_id']);
-            if ($aiDecision === 'accepted') {
-                $this->tradeEngine->executeTrade($trade['trade_id']);
-                $trade['status'] = 'accepted';
-                $trade['message'] = 'Trade accepted! Players have been swapped.';
-            } elseif ($aiDecision === 'rejected') {
-                $this->db->prepare("UPDATE trades SET status = 'rejected' WHERE id = ?")->execute([$trade['trade_id']]);
-                $trade['status'] = 'rejected';
-                $trade['message'] = 'Trade rejected by the other team.';
+            $tradeId = $trade['trade_id'];
+
+            // If this came from find-opportunities/acquire (pre-agreed), auto-accept
+            $preAgreed = !empty($body['pre_agreed']);
+
+            if ($preAgreed) {
+                $this->db->prepare("UPDATE trades SET status = 'accepted' WHERE id = ?")->execute([$tradeId]);
+                $this->tradeEngine->executeTrade($tradeId);
+                $trade['status'] = 'completed';
+                $trade['message'] = 'Trade complete! Players have been swapped.';
             } else {
-                $trade['status'] = 'counter';
-                $trade['message'] = 'The other team wants to counter-offer.';
+                // Manual proposal — AI evaluates with full reasoning
+                $aiResult = $this->tradeEngine->aiEvaluateTrade($tradeId);
+                $decision = $aiResult['decision'] ?? 'rejected';
+                $reason = $aiResult['reason'] ?? 'No response.';
+
+                if ($decision === 'accepted') {
+                    $this->db->prepare("UPDATE trades SET status = 'accepted' WHERE id = ?")->execute([$tradeId]);
+                    $this->tradeEngine->executeTrade($tradeId);
+                    $trade['status'] = 'completed';
+                    $trade['message'] = 'Trade accepted! Players have been swapped.';
+                    $trade['reason'] = $reason;
+                } elseif ($decision === 'counter') {
+                    $this->db->prepare("UPDATE trades SET status = 'countered', veto_reason = ? WHERE id = ?")
+                        ->execute([$reason, $tradeId]);
+                    $trade['status'] = 'countered';
+                    $trade['message'] = $reason;
+                    $trade['reason'] = $reason;
+                    $trade['counter_offer'] = $aiResult['counter_offer'] ?? null;
+                } else {
+                    $this->db->prepare("UPDATE trades SET status = 'rejected', veto_reason = ? WHERE id = ?")
+                        ->execute([$reason, $tradeId]);
+                    $trade['status'] = 'rejected';
+                    $trade['message'] = $reason;
+                    $trade['reason'] = $reason;
+                }
             }
         }
 
         Response::success('Trade proposed', ['trade' => $trade]);
+    }
+
+    /**
+     * POST /api/trades/sweeten
+     * Ask a team to sweeten their offer — add a pick or upgrade a player.
+     */
+    public function sweeten(): void
+    {
+        $auth = AuthMiddleware::handle();
+        if (!$auth) return;
+
+        if ($this->isTradeDeadlinePassed($auth['league_id'])) {
+            Response::error('The trade deadline has passed. No trades can be made this season.', 403);
+            return;
+        }
+
+        $body = Response::getJsonBody();
+        $teamId = (int) ($body['team_id'] ?? 0);
+        $playerId = (int) ($body['player_id'] ?? 0);
+        $currentOfferPlayerIds = $body['current_offer_player_ids'] ?? [];
+        $currentOfferPickIds = $body['current_offer_pick_ids'] ?? [];
+
+        if (!$teamId || !$playerId) {
+            Response::error('team_id and player_id are required');
+            return;
+        }
+
+        $result = $this->tradeEngine->sweetenDeal(
+            $playerId,
+            $teamId,
+            $auth['team_id'],
+            $currentOfferPlayerIds,
+            $currentOfferPickIds
+        );
+
+        Response::json($result);
     }
 
     /**
@@ -122,6 +214,11 @@ class TradeController
     {
         $auth = AuthMiddleware::handle();
         if (!$auth) return;
+
+        if ($this->isTradeDeadlinePassed($auth['league_id'])) {
+            Response::error('The trade deadline has passed. No trades can be made this season.', 403);
+            return;
+        }
 
         $tradeId = (int) $params['id'];
         $body = Response::getJsonBody();
@@ -185,6 +282,11 @@ class TradeController
         $auth = AuthMiddleware::handle();
         if (!$auth) return;
 
+        if ($this->isTradeDeadlinePassed($auth['league_id'])) {
+            Response::error('The trade deadline has passed. No trades can be made this season.', 403);
+            return;
+        }
+
         $body = Response::getJsonBody();
 
         if (empty($body['player_id'])) {
@@ -203,6 +305,59 @@ class TradeController
         }
 
         Response::json($result);
+    }
+
+    /**
+     * POST /api/trades/acquire
+     * "I want this player from another team — what would it cost me?"
+     * Reverse of findOpportunities: the opposing team's brain decides
+     * what it would need from you to give up their player.
+     */
+    public function acquirePlayer(): void
+    {
+        $auth = AuthMiddleware::handle();
+        if (!$auth) return;
+
+        if ($this->isTradeDeadlinePassed($auth['league_id'])) {
+            Response::error('The trade deadline has passed. No trades can be made this season.', 403);
+            return;
+        }
+
+        $body = Response::getJsonBody();
+
+        if (empty($body['player_id'])) {
+            Response::error('player_id is required');
+            return;
+        }
+
+        $result = $this->tradeEngine->findAcquisitionPackages(
+            (int) $body['player_id'],
+            $auth['team_id']
+        );
+
+        if (!$result['player']) {
+            Response::notFound('Player not found or not available for trade');
+            return;
+        }
+
+        Response::json($result);
+    }
+
+    /**
+     * GET /api/trades/incoming-offers
+     * AI teams that want to make trade offers to the user.
+     */
+    public function incomingOffers(): void
+    {
+        $auth = AuthMiddleware::handle();
+        if (!$auth) return;
+
+        $offers = $this->tradeEngine->generateIncomingOffers(
+            $auth['league_id'],
+            $auth['team_id']
+        );
+
+        Response::json(['offers' => $offers]);
     }
 
     /**

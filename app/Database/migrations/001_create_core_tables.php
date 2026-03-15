@@ -48,6 +48,8 @@ return function (string $driver): array {
             secondary_color VARCHAR(7) NOT NULL,
             logo_emoji VARCHAR(10) NOT NULL DEFAULT '',
             overall_rating INT NOT NULL DEFAULT 75,
+            offense_rating INT NOT NULL DEFAULT 75,
+            defense_rating INT NOT NULL DEFAULT 75,
             salary_cap {$bigint} NOT NULL DEFAULT 225000000,
             cap_used {$bigint} NOT NULL DEFAULT 0,
             wins INT NOT NULL DEFAULT 0,

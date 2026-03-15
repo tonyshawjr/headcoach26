@@ -48,6 +48,11 @@ class Router
 
             foreach ($this->routes as $route) {
                 if ($route['method'] === $method && preg_match($route['pattern'], $uri, $matches)) {
+                    // CSRF validation on state-changing requests
+                    if (!\App\Middleware\CsrfMiddleware::validate()) {
+                        return;
+                    }
+
                     $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
                     [$class, $action] = $route['handler'];
                     $controller = new $class();

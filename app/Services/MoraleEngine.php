@@ -48,6 +48,8 @@ class MoraleEngine
     public function processPlayingTime(int $teamId): void
     {
         // Find high-rated players (75+ overall) who are NOT in the depth chart as starters (slot 1)
+        // Exclude: currently injured, recently injured (any injury record this season),
+        // or players on holdout/IR status
         $stmt = $this->db->prepare(
             "SELECT p.id, p.overall_rating, p.position, p.morale
              FROM players p
@@ -55,9 +57,23 @@ class MoraleEngine
                AND p.id NOT IN (
                    SELECT dc.player_id FROM depth_chart dc
                    WHERE dc.team_id = ? AND dc.slot = 1
+               )
+               AND p.id NOT IN (
+                   SELECT i.player_id FROM injuries i
+                   WHERE i.team_id = ?
                )"
         );
-        $stmt->execute([$teamId, $teamId]);
+        $stmt->execute([$teamId, $teamId, $teamId]);
+        $benchedStars = $stmt->fetchAll();
+
+        // Auto-restore: if a high-rated player isn't starting but should be
+        // (higher OVR than current starter at their position), promote them back
+        foreach ($benchedStars as $player) {
+            $this->autoRestoreStarter($teamId, $player);
+        }
+
+        // Re-query after auto-restore
+        $stmt->execute([$teamId, $teamId, $teamId]);
         $benchedStars = $stmt->fetchAll();
 
         foreach ($benchedStars as $player) {
@@ -297,5 +313,73 @@ class MoraleEngine
         $stmt = $this->db->prepare("SELECT * FROM teams WHERE id = ?");
         $stmt->execute([$teamId]);
         return $stmt->fetch() ?: null;
+    }
+
+    /**
+     * Auto-restore a player to the starting lineup if they're higher-rated
+     * than the current starter at their position and are healthy.
+     * This handles the case where a player returns from injury but their
+     * backup is still listed as the starter.
+     */
+    private function autoRestoreStarter(int $teamId, array $player): void
+    {
+        $playerId = (int) $player['id'];
+        $position = $player['position'];
+        $playerOvr = (int) $player['overall_rating'];
+
+        // Check if currently injured
+        $injStmt = $this->db->prepare(
+            "SELECT id FROM injuries WHERE player_id = ? AND weeks_remaining > 0 LIMIT 1"
+        );
+        $injStmt->execute([$playerId]);
+        if ($injStmt->fetch()) {
+            return; // Still injured, don't restore
+        }
+
+        // Find the current slot 1 starter at this position
+        $starterStmt = $this->db->prepare(
+            "SELECT dc.player_id, p.overall_rating
+             FROM depth_chart dc
+             JOIN players p ON p.id = dc.player_id
+             WHERE dc.team_id = ? AND dc.position_group = ? AND dc.slot = 1"
+        );
+        $starterStmt->execute([$teamId, $position]);
+        $currentStarter = $starterStmt->fetch();
+
+        if (!$currentStarter) {
+            // No starter at all — put this player in slot 1
+            $this->db->prepare(
+                "INSERT OR REPLACE INTO depth_chart (team_id, position_group, slot, player_id) VALUES (?, ?, 1, ?)"
+            )->execute([$teamId, $position, $playerId]);
+            return;
+        }
+
+        $starterOvr = (int) $currentStarter['overall_rating'];
+        $starterId = (int) $currentStarter['player_id'];
+
+        // If the benched player is clearly better (3+ OVR higher), swap them back
+        if ($playerOvr >= $starterOvr + 3 && $starterId !== $playerId) {
+            // Move current starter to slot 2
+            $this->db->prepare(
+                "UPDATE depth_chart SET slot = 2 WHERE team_id = ? AND position_group = ? AND slot = 1"
+            )->execute([$teamId, $position]);
+
+            // Check if this player already has a slot
+            $existingSlot = $this->db->prepare(
+                "SELECT slot FROM depth_chart WHERE team_id = ? AND position_group = ? AND player_id = ?"
+            );
+            $existingSlot->execute([$teamId, $position, $playerId]);
+            $slot = $existingSlot->fetch();
+
+            if ($slot) {
+                $this->db->prepare(
+                    "UPDATE depth_chart SET slot = 1 WHERE team_id = ? AND position_group = ? AND player_id = ?"
+                )->execute([$teamId, $position, $playerId]);
+            } else {
+                $this->db->prepare(
+                    "INSERT INTO depth_chart (team_id, position_group, slot, player_id) VALUES (?, ?, 1, ?)"
+                )->execute([$teamId, $position, $playerId]);
+            }
+        }
     }
 }

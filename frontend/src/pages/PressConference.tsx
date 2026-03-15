@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { usePressConference, useAnswerPressConference } from '@/hooks/useApi';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { PageLayout, PageHeader, Section, StatCard, ActionButton, EmptyBlock } from '@/components/ui/sports-ui';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Mic2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Mic2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const toneColors: Record<string, string> = {
@@ -22,10 +21,21 @@ export default function PressConference() {
   const [results, setResults] = useState<{ influence_change: number; morale_change: number; media_change: number } | null>(null);
 
   if (isLoading) return <p className="text-[var(--text-secondary)]">Loading...</p>;
-  if (error || !pc) return <p className="text-[var(--text-secondary)]">No press conference available right now.</p>;
+  if (error || !pc) {
+    return (
+      <PageLayout>
+        <PageHeader title="Press Conference" icon={Mic2} accentColor="var(--accent-red)" />
+        <EmptyBlock
+          icon={Mic2}
+          title="No Press Conference Available"
+          description="There's no press conference scheduled right now. Check back after your next game."
+        />
+      </PageLayout>
+    );
+  }
 
   const questions = pc.questions ?? [];
-  const allAnswered = questions.length > 0 && questions.every((_, i) => selectedAnswers[i] !== undefined);
+  const allAnswered = questions.length > 0 && questions.every((_: unknown, i: number) => selectedAnswers[i] !== undefined);
 
   const handleSubmit = async () => {
     try {
@@ -39,78 +49,88 @@ export default function PressConference() {
 
   if (results) {
     return (
-      <div className="mx-auto max-w-2xl space-y-6">
-        <h1 className="font-display text-2xl">Press Conference Results</h1>
+      <PageLayout className="mx-auto max-w-2xl">
+        <PageHeader
+          title="Press Conference Results"
+          icon={Mic2}
+          accentColor="var(--accent-red)"
+          subtitle="Here's how the media reacted"
+        />
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="border-[var(--border)] bg-[var(--bg-surface)]">
-            <CardContent className="flex items-center justify-around p-8">
-              <ResultStat label="Influence" value={results.influence_change} />
-              <ResultStat label="Morale" value={results.morale_change} />
-              <ResultStat label="Media" value={results.media_change} />
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-3 gap-4">
+            <ResultStatCard label="Influence" value={results.influence_change} />
+            <ResultStatCard label="Morale" value={results.morale_change} />
+            <ResultStatCard label="Media" value={results.media_change} />
+          </div>
         </motion.div>
-      </div>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-center gap-3">
-        <Mic2 className="h-6 w-6 text-[var(--accent-red)]" />
-        <div>
-          <h1 className="font-display text-2xl">Press Conference</h1>
-          <p className="text-sm text-[var(--text-secondary)]">
-            Week {pc.week} — {pc.type === 'post_game' ? 'Post-Game' : 'Weekly'} Press Conference
-          </p>
-        </div>
-      </div>
+    <PageLayout className="mx-auto max-w-2xl">
+      <PageHeader
+        title="Press Conference"
+        icon={Mic2}
+        accentColor="var(--accent-red)"
+        subtitle={`Week ${pc.week} — ${pc.type === 'post_game' ? 'Post-Game' : 'Weekly'} Press Conference`}
+      />
 
       <div className="space-y-6">
-        {questions.map((q, qi) => (
-          <Card key={qi} className="border-[var(--border)] bg-[var(--bg-surface)]">
-            <CardHeader>
-              <CardTitle className="text-sm font-normal italic text-[var(--text-secondary)]">
-                "{q.question}"
-              </CardTitle>
-              {q.topic && <Badge variant="outline" className="w-fit text-[10px]">{q.topic}</Badge>}
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {q.answers.map((a, ai) => (
-                <button
-                  key={ai}
-                  onClick={() => setSelectedAnswers((prev) => ({ ...prev, [qi]: ai }))}
-                  className={`w-full rounded-md border p-3 text-left transition-all ${
-                    selectedAnswers[qi] === ai
-                      ? toneColors[a.tone] ?? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10'
-                      : 'border-[var(--border)] hover:border-[var(--text-muted)]'
-                  }`}
-                >
-                  <p className="text-sm">"{a.text}"</p>
-                  <Badge variant="outline" className="mt-1 text-[10px]">{a.tone}</Badge>
-                </button>
-              ))}
-            </CardContent>
-          </Card>
+        {questions.map((q: any, qi: number) => (
+          <Section key={qi} title={`Question ${qi + 1}`} delay={qi * 0.08}>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden">
+              <div className="px-5 py-4 border-b border-[var(--border)]">
+                <p className="text-sm italic text-[var(--text-secondary)]">"{q.question}"</p>
+                {q.topic && (
+                  <Badge variant="outline" className="mt-2 w-fit text-[10px]">{q.topic}</Badge>
+                )}
+              </div>
+              <div className="p-4 space-y-2">
+                {q.answers.map((a: any, ai: number) => (
+                  <button
+                    key={ai}
+                    onClick={() => setSelectedAnswers((prev) => ({ ...prev, [qi]: ai }))}
+                    className={`w-full rounded-md border p-3 text-left transition-all ${
+                      selectedAnswers[qi] === ai
+                        ? toneColors[a.tone] ?? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10'
+                        : 'border-[var(--border)] hover:border-[var(--text-muted)]'
+                    }`}
+                  >
+                    <p className="text-sm">"{a.text}"</p>
+                    <Badge variant="outline" className="mt-1 text-[10px]">{a.tone}</Badge>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Section>
         ))}
       </div>
 
-      <Button onClick={handleSubmit} disabled={!allAnswered || answer.isPending} className="w-full">
-        {answer.isPending ? 'Submitting...' : 'Submit Responses'}
-      </Button>
-    </div>
+      <div className="mt-6">
+        <ActionButton
+          onClick={handleSubmit}
+          disabled={!allAnswered || answer.isPending}
+          fullWidth
+          accentColor="var(--accent-red)"
+        >
+          {answer.isPending ? 'Submitting...' : 'Submit Responses'}
+        </ActionButton>
+      </div>
+    </PageLayout>
   );
 }
 
-function ResultStat({ label, value }: { label: string; value: number }) {
-  const Icon = value > 0 ? TrendingUp : value < 0 ? TrendingDown : Minus;
-  const color = value > 0 ? 'text-green-400' : value < 0 ? 'text-red-400' : 'text-[var(--text-muted)]';
+function ResultStatCard({ label, value }: { label: string; value: number }) {
+  const trend = value > 0 ? 'up' as const : value < 0 ? 'down' as const : 'neutral' as const;
+  const display = value > 0 ? `+${value}` : `${value}`;
 
   return (
-    <div className="text-center">
-      <Icon className={`mx-auto h-6 w-6 ${color}`} />
-      <p className={`font-display text-2xl ${color}`}>{value > 0 ? '+' : ''}{value}</p>
-      <p className="text-xs text-[var(--text-muted)]">{label}</p>
-    </div>
+    <StatCard
+      label={label}
+      value={display}
+      trend={trend}
+      accentColor={value > 0 ? '#22c55e' : value < 0 ? '#ef4444' : 'var(--accent-blue)'}
+    />
   );
 }

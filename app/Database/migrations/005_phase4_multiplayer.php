@@ -68,6 +68,10 @@ return function (string $driver): array {
             force_advance_enabled INTEGER NOT NULL DEFAULT 1,
             max_roster_size INTEGER NOT NULL DEFAULT 53,
             salary_cap INTEGER NOT NULL DEFAULT 225000000,
+            trade_deadline_week INTEGER NOT NULL DEFAULT 12,
+            salary_cap_enabled INTEGER NOT NULL DEFAULT 1,
+            allow_ai_trades INTEGER NOT NULL DEFAULT 1,
+            league_paused INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT DEFAULT NULL,
             FOREIGN KEY (league_id) REFERENCES leagues(id)
         )",
@@ -110,5 +114,10 @@ return function (string $driver): array {
         "CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read)",
         "CREATE INDEX IF NOT EXISTS idx_gps_game ON game_plan_submissions(game_id, team_id)",
         "CREATE INDEX IF NOT EXISTS idx_trade_reviews_trade ON trade_reviews(trade_id)",
+
+        // Add columns if they don't already exist (safe for re-runs on existing DBs)
+        "ALTER TABLE commissioner_settings ADD COLUMN trade_deadline_week INTEGER NOT NULL DEFAULT 12",
+        "ALTER TABLE commissioner_settings ADD COLUMN salary_cap_enabled INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE commissioner_settings ADD COLUMN allow_ai_trades INTEGER NOT NULL DEFAULT 1",
     ];
 };

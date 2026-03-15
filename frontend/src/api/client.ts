@@ -1,9 +1,27 @@
 const BASE = '/api';
 
+// CSRF token — stored after login/session response
+let csrfToken: string | null = null;
+
+export function setCsrfToken(token: string | null) {
+  csrfToken = token;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = options?.method ?? 'GET';
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string>),
+  };
+
+  // Include CSRF token on state-changing requests
+  if (csrfToken && method !== 'GET' && method !== 'HEAD') {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers,
     ...options,
   });
 
@@ -20,6 +38,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!res.ok) {
     const err = data as Record<string, string>;
     throw new Error(err?.error || err?.message || `Request failed (${res.status})`);
+  }
+
+  // Auto-capture CSRF token from responses
+  if (data && typeof data === 'object' && 'csrf_token' in data) {
+    const token = (data as Record<string, unknown>).csrf_token;
+    if (typeof token === 'string') {
+      csrfToken = token;
+    }
   }
 
   return data as T;
@@ -44,6 +70,57 @@ export const authApi = {
     api.post<{ user_id: number }>('/auth/register', { username, email, password }),
 };
 
+// Profile
+export interface ProfileData {
+  user_id: number;
+  username: string;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  avatar_color: string | null;
+  bio: string | null;
+  is_admin: boolean;
+  created_at: string;
+  coach_name: string | null;
+  coach_id: number | null;
+  coach_avatar_url: string | null;
+  coaching_philosophy: string | null;
+  archetype: string | null;
+  team_name: string | null;
+  team_abbreviation: string | null;
+  team_primary_color: string | null;
+}
+
+export interface ProfileUpdate {
+  display_name?: string;
+  email?: string;
+  bio?: string;
+  avatar_url?: string;
+  avatar_color?: string;
+  coach_name?: string;
+  coaching_philosophy?: string;
+  coach_avatar_url?: string;
+  current_password?: string;
+  new_password?: string;
+}
+
+export const profileApi = {
+  get: () => api.get<{ profile: ProfileData }>('/profile').then(r => r.profile),
+  update: (data: ProfileUpdate) => api.put<{ message: string }>('/profile', data),
+  uploadAvatar: async (file: File): Promise<{ avatar_url: string; message: string }> => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    const res = await fetch(`${BASE}/profile/avatar`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Upload failed');
+    return data;
+  },
+};
+
 // Leagues
 export const leagueApi = {
   list: () => api.get<{ leagues: League[] }>('/leagues').then((r) => r.leagues),
@@ -54,7 +131,7 @@ export const leagueApi = {
 // Teams
 export const teamApi = {
   list: (leagueId: number) => api.get<{ conferences: Record<string, Record<string, Team[]>> }>(`/leagues/${leagueId}/teams`),
-  get: (id: number) => api.get<Team>(`/teams/${id}`),
+  get: (id: number) => api.get<{ team: Team; rankings?: { pass_rank: number; pass_ypg: number; rush_rank: number; rush_ypg: number; total_rank: number; total_ypg: number } }>(`/teams/${id}`).then((r) => ({ ...r.team, rankings: r.rankings })),
   capSpace: (id: number) => api.get<CapInfo>(`/teams/${id}/cap`),
 };
 
@@ -64,6 +141,14 @@ export const playerApi = {
   get: (id: number) => api.get<Player>(`/players/${id}`),
   stats: (id: number) => api.get<PlayerStats>(`/players/${id}/stats`),
   gameLog: (id: number) => api.get<{ games: GameLogEntry[] }>(`/players/${id}/game-log`).then((r) => r.games),
+  search: (q: string) => api.get<{ players: SearchResult[] }>(`/players/search?q=${encodeURIComponent(q)}`).then((r) => r.players),
+  moveToActive: (id: number) => api.post<{ success: boolean; message: string }>(`/players/${id}/move-to-active`),
+  moveToPracticeSquad: (id: number) => api.post<{ success: boolean; message: string }>(`/players/${id}/move-to-practice-squad`),
+  moveToIR: (id: number) => api.post<{ success: boolean; message: string }>(`/players/${id}/move-to-ir`),
+  release: (id: number) => api.post<{ success: boolean; message: string }>(`/players/${id}/release`),
+  contractStatus: (id: number) => api.get<ContractStatusResponse>(`/players/${id}/contract-status`),
+  offerExtension: (id: number, salary: number, years: number) =>
+    api.post<ExtensionOfferResponse>(`/players/${id}/offer-extension`, { salary, years }),
 };
 
 // Depth Chart
@@ -71,6 +156,8 @@ export const depthChartApi = {
   get: (teamId: number) => api.get<DepthChartData>(`/teams/${teamId}/depth-chart`),
   update: (teamId: number, changes: DepthChartChange[]) =>
     api.put<DepthChartData>(`/teams/${teamId}/depth-chart`, { changes }),
+  autoSet: (teamId: number) =>
+    api.post<DepthChartData>(`/teams/${teamId}/depth-chart/auto-set`),
 };
 
 // Games
@@ -84,6 +171,7 @@ export const gameApi = {
   },
   get: (id: number) => api.get<Game>(`/games/${id}`),
   boxScore: (id: number) => api.get<BoxScoreData>(`/games/${id}/box-score`),
+  articles: (id: number) => api.get<{ articles: Article[] }>(`/games/${id}/articles`).then((r) => r.articles),
 };
 
 // Game Plan
@@ -102,8 +190,15 @@ export const simApi = {
 // Standings
 export const standingsApi = {
   get: (leagueId: number) => api.get<StandingsData>(`/leagues/${leagueId}/standings`),
-  leaders: (leagueId: number) => api.get<{ leaders: LeadersData }>(`/leagues/${leagueId}/leaders`).then((r) => r.leaders),
+  leaders: (leagueId: number, type?: string) => {
+    const qs = type ? `?type=${type}` : '';
+    return api.get<{ leaders: LeadersData }>(`/leagues/${leagueId}/leaders${qs}`).then((r) => r.leaders);
+  },
   powerRankings: (leagueId: number) => api.get<PowerRanking[]>(`/leagues/${leagueId}/power-rankings`),
+  records: (leagueId: number) => api.get<RecordsData>(`/leagues/${leagueId}/records`),
+  history: (leagueId: number) => api.get<{ history: LeagueHistoryEntry[] }>(`/leagues/${leagueId}/history`).then((r) => r.history),
+  scenarios: (leagueId: number) => api.get<ScenariosData>(`/leagues/${leagueId}/scenarios`),
+  achievements: () => api.get<{ achievements: AchievementData[] }>('/achievements').then((r) => r.achievements),
 };
 
 // Press Conference
@@ -149,6 +244,9 @@ export interface User {
   username: string;
   email: string;
   is_admin: boolean;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
 }
 
 export interface League {
@@ -219,6 +317,20 @@ export interface Player {
   injury?: Injury | null;
 }
 
+export interface SearchResult {
+  id: number;
+  first_name: string;
+  last_name: string;
+  position: string;
+  overall_rating: number;
+  age: number;
+  team_id: number | null;
+  team_city: string | null;
+  team_name: string | null;
+  team_abbreviation: string | null;
+  status: string;
+}
+
 export interface Injury {
   id: number;
   player_id: number;
@@ -232,6 +344,7 @@ export interface Game {
   league_id: number;
   season_id: number;
   week: number;
+  game_type?: string;
   home_team_id: number;
   away_team_id: number;
   home_score: number | null;
@@ -246,6 +359,7 @@ export interface Game {
 export interface RosterResponse {
   active: Player[];
   practice_squad: Player[];
+  injured_reserve: Player[];
   counts: Record<string, number>;
 }
 
@@ -263,10 +377,35 @@ export interface ScheduleResponse {
   [week: string]: Game[];
 }
 
+export interface GameLogEntry {
+  quarter: number;
+  clock: number;
+  possession: 'home' | 'away';
+  yard_line: number;
+  down: number;
+  distance: number;
+  home_score: number;
+  away_score: number;
+  play: {
+    type: string;
+    yards: number;
+    made?: boolean | null;
+    distance?: number | null;
+    player?: string | null;
+    target?: string | null;
+    defender?: string | null;
+    depth?: string | null;
+  };
+  note?: string | null;
+  key_play?: boolean;
+}
+
 export interface BoxScoreData {
   game: Game;
   home: { players: BoxScorePlayer[]; totals: TeamTotals };
   away: { players: BoxScorePlayer[]; totals: TeamTotals };
+  game_log?: GameLogEntry[];
+  game_class?: { type: string; description: string } | null;
 }
 
 export interface BoxScorePlayer {
@@ -299,6 +438,53 @@ export interface SimResult {
 export interface StandingsData {
   divisions: Record<string, Record<string, StandingsTeam[]>>;
   conferences: Record<string, StandingsTeam[]>;
+}
+
+export interface ScenarioTeam {
+  id: number;
+  city: string;
+  name: string;
+  abbreviation: string;
+  conference: string;
+  division: string;
+  primary_color: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  points_for: number;
+  points_against: number;
+}
+
+export interface RemainingGame {
+  id: number;
+  week: number;
+  home_team_id: number;
+  away_team_id: number;
+  home_abbr: string;
+  away_abbr: string;
+}
+
+export interface TeamScenario {
+  team_id: number;
+  abbreviation: string;
+  conference_rank: number;
+  games_left: number;
+  max_possible_wins: number;
+  is_div_leader: boolean;
+  div_magic_number: number | null;
+  can_win_division: boolean;
+  playoff_spots: number;
+  clinched_playoff: boolean;
+  clinched_division: boolean;
+  eliminated: boolean;
+}
+
+export interface ScenariosData {
+  current_week: number;
+  total_games: number;
+  teams: ScenarioTeam[];
+  remaining_games: RemainingGame[];
+  scenarios: Record<number, TeamScenario>;
 }
 
 export interface StandingsTeam extends Team {
@@ -372,16 +558,99 @@ export interface TickerItem {
   week: number;
 }
 
+export interface CapContract {
+  contract_id: number;
+  player_id: number;
+  player_name: string;
+  position: string;
+  overall_rating: number;
+  age: number;
+  years_total: number;
+  years_remaining: number;
+  salary_annual: number;
+  cap_hit: number;
+  guaranteed: number;
+  dead_cap: number;
+}
+
 export interface CapInfo {
+  team_id: number;
+  team_name: string;
   total_cap: number;
   cap_used: number;
   cap_remaining: number;
-  contracts: { player_name: string; cap_hit: number; years: number }[];
+  total_guaranteed: number;
+  total_dead_cap: number;
+  contracts: CapContract[];
+  by_position: Record<string, { total_salary: number; count: number }>;
+  committed_next_year: number;
+  projected_cap_available: number;
+  dead_money: number;
 }
 
 export interface PlayerStats {
   season: Record<string, number>;
   career: Record<string, number>;
+}
+
+// --- Contract Decision Types ---
+
+export interface ContractStatusResponse {
+  player: {
+    id: number;
+    first_name: string;
+    last_name: string;
+    position: string;
+    age: number;
+    overall_rating: number;
+    personality: string;
+    morale: string;
+  };
+  contract: {
+    id: number;
+    salary_annual: number;
+    years_total: number;
+    years_remaining: number;
+    cap_hit: number;
+    guaranteed: number;
+    dead_cap: number;
+    contract_type: string;
+  } | null;
+  team: {
+    id: number;
+    city: string;
+    name: string;
+    abbreviation: string;
+  } | null;
+  eligible_for_extension: boolean;
+  market_value: number;
+  willingness: {
+    open_to_extension: boolean;
+    openness_score: number;
+    minimum_salary: number;
+    preferred_years: number;
+    market_value: number;
+    reasoning: string;
+  };
+  preferences: {
+    money_weight: number;
+    winning_weight: number;
+    playing_time_weight: number;
+    loyalty_weight: number;
+    market_weight: number;
+    priorities: string[];
+  };
+  is_my_player: boolean;
+}
+
+export interface ExtensionOfferResponse {
+  result: 'accepted' | 'countered' | 'refused';
+  message: string;
+  reasoning: string;
+  willingness: string;
+  score: number;
+  counter_offer?: { salary: number; years: number };
+  market_value?: number;
 }
 
 export interface GameLogEntry {
@@ -458,6 +727,29 @@ export interface FreeAgent {
   asking_salary: number;
   asking_years: number;
   interest_level: string;
+  image_url: string | null;
+  is_restricted: number;
+  tender_level: string | null;
+  tender_salary: number;
+  original_team_id: number | null;
+  original_team_abbr: string | null;
+  original_team_city: string | null;
+  original_team_name: string | null;
+  original_draft_round: number | null;
+  offer_sheet: RfaOfferSheet | null;
+}
+
+export interface RfaOfferSheet {
+  id: number;
+  free_agent_id: number;
+  offering_team_id: number;
+  offering_team_abbr: string;
+  offering_team_city: string;
+  offering_team_name: string;
+  salary: number;
+  years: number;
+  status: string;
+  created_at: string;
 }
 
 export interface FaBid {
@@ -494,6 +786,10 @@ export interface DraftProspect {
   scouted_range_high?: number;
   combine_grade?: string;
   is_drafted: boolean;
+  tier?: string;
+  injury_flag?: boolean;
+  latest_performance?: string;
+  stock_trend?: string;
 }
 
 export interface DraftPick {
@@ -504,15 +800,21 @@ export interface DraftPick {
   team_name?: string;
   is_used: boolean;
   selected_prospect_id?: number;
+  via_team?: string;
+  original_record?: string;
 }
 
 export interface ScoutResult {
   prospect_id: number;
   overall_range_low: number;
   overall_range_high: number;
+  scouted_overall?: number;
+  scouted_floor?: number;
+  scouted_ceiling?: number;
   combine_grade: string;
   strengths: string[];
   weaknesses: string[];
+  scouts_remaining?: number;
 }
 
 export interface DraftResult {
@@ -520,6 +822,35 @@ export interface DraftResult {
   pick: DraftPick;
   prospect: DraftProspect;
   message: string;
+}
+
+export interface DraftStatePick {
+  id: number;
+  round: number;
+  pick_number: number;
+  overall_pick: number;
+  is_used: boolean;
+  team_id: number;
+  team_name: string;
+  team_city: string;
+  team_abbreviation: string;
+  team_primary_color: string;
+  team_secondary_color: string;
+  prospect_id?: number;
+  prospect_name?: string;
+  prospect_position?: string;
+  prospect_college?: string;
+  prospect_age?: number;
+  prospect_overall?: number;
+}
+
+export interface DraftState {
+  picks: DraftStatePick[];
+  current_pick: DraftStatePick | null;
+  round: number;
+  total_rounds: number;
+  draft_year: number;
+  status: 'in_progress' | 'complete' | 'not_started';
 }
 
 export interface StaffMember {
@@ -615,6 +946,31 @@ export interface FindTradeResult {
   opportunities: TradeOpportunity[];
 }
 
+export interface AcquirePackage {
+  players: (FindTradePlayer & { fills_need?: boolean })[];
+  picks: { id: number; label: string; round: number; year: number; trade_value: number }[];
+  total_value: number;
+}
+
+export interface AcquirePlayerResult {
+  player: FindTradePlayer;
+  available: boolean;
+  asking_price?: number;
+  reason: string;
+  team: {
+    id: number;
+    city: string;
+    name: string;
+    abbreviation: string;
+    primary_color: string;
+    secondary_color: string;
+    gm_personality: string;
+    mode: string;
+  };
+  their_needs?: TeamNeed[];
+  packages: AcquirePackage[];
+}
+
 export const tradeApi = {
   list: () => api.get<{ trades: Trade[] }>('/trades').then((r) => r.trades),
   propose: (data: TradeProposal) =>
@@ -624,6 +980,8 @@ export const tradeApi = {
   evaluate: (id: number) => api.get<{ trade_id: number; evaluation: TradeEvaluation }>(`/trades/${id}/evaluate`).then((r) => r.evaluation),
   findOpportunities: (playerId: number) =>
     api.post<FindTradeResult>('/trades/find-opportunities', { player_id: playerId }),
+  acquirePlayer: (playerId: number) =>
+    api.post<AcquirePlayerResult>('/trades/acquire', { player_id: playerId }),
 };
 
 // Free Agency
@@ -633,6 +991,17 @@ export const freeAgencyApi = {
   bid: (id: number, salary_offer: number, years_offer: number) =>
     api.post(`/free-agents/${id}/bid`, { salary_offer, years_offer }),
   myBids: () => api.get<{ bids: FaBid[] }>('/free-agents/my-bids').then((r) => r.bids),
+  // Restricted Free Agency
+  setTender: (id: number, level: string) =>
+    api.post<{ success: boolean; tender_level: string; tender_salary: number }>(`/free-agents/${id}/tender`, { level }),
+  makeOfferSheet: (id: number, salary: number, years: number) =>
+    api.post<{ success: boolean; offer_sheet_id: number }>(`/free-agents/${id}/offer-sheet`, { salary, years }),
+  matchOffer: (id: number) =>
+    api.post<{ success: boolean; action: string }>(`/free-agents/${id}/match-offer`, {}),
+  declineOffer: (id: number) =>
+    api.post<{ success: boolean; action: string; compensation: { round_label: string } }>(`/free-agents/${id}/decline-offer`, {}),
+  rfaOffers: () =>
+    api.get<{ pending_offers: any[]; my_rfas: FreeAgent[] }>('/free-agents/rfa-offers'),
 };
 
 // Draft
@@ -644,6 +1013,7 @@ export const draftApi = {
   scout: (id: number) => api.post<{ message: string; report: ScoutResult }>(`/draft/scout/${id}`).then((r) => r.report),
   pick: (pickId: number, prospectId: number) =>
     api.post<DraftResult>('/draft/pick', { pick_id: pickId, prospect_id: prospectId }),
+  state: () => api.get<DraftState>('/draft/state'),
 };
 
 // Coaching Staff
@@ -687,7 +1057,25 @@ export const commissionerApi = {
   reviewTrade: (id: number, action: string, reason?: string) => api.put(`/commissioner/trades/${id}/review`, { action, reason }),
   forceAdvance: () => api.post('/commissioner/force-advance'),
   submissionStatus: () => api.get<{ submissions: unknown[] }>('/commissioner/submissions').then((r) => r.submissions),
+  activity: () => api.get<{ activity: ActivityRecord[] }>('/commissioner/activity').then((r) => r.activity),
+  replaceCoach: (teamId: number, action: 'to_ai' | 'to_human') =>
+    api.post<{ success: boolean; message: string }>('/commissioner/replace-coach', { team_id: teamId, action }),
+  sendReminders: () => api.post<{ success: boolean; message: string; count: number }>('/commissioner/send-reminders'),
 };
+
+export interface ActivityRecord {
+  team_id: number;
+  team_name: string;
+  team_emoji: string;
+  abbreviation: string;
+  coach_id: number;
+  coach_name: string;
+  is_human: boolean;
+  games_played: number;
+  plans_submitted: number;
+  plans_missed: number;
+  status: 'active' | 'inactive' | 'absent';
+}
 
 // Messages
 export const messageApi = {
@@ -809,3 +1197,288 @@ export const coachCareerApi = {
     }),
   history: () => api.get<CareerHistory[]>('/coach-career/history'),
 };
+
+// --- Offseason Report ---
+
+export interface OffseasonReport {
+  awards: { type: string; player_name?: string; coach_name?: string; team_name: string; stats?: string }[];
+  development: {
+    improved: { name: string; position: string; old_ovr: number; new_ovr: number; change: number }[];
+    declined: { name: string; position: string; old_ovr: number; new_ovr: number; change: number }[];
+    retired: { name: string; position: string; final_ovr: number; age: number }[];
+  };
+  contracts_expired: { name: string; position: string; overall_rating: number; team_name: string }[];
+  draft_class_size: number;
+  free_agents_generated: number;
+  schedule_games: number;
+  new_season_year: number;
+}
+
+// Ready Check & Advance
+export interface ReadyStatus {
+  week: number;
+  coaches: { coach_id: number; name: string; team: string; team_name: string; is_ready: boolean }[];
+  coaches_ready: number;
+  coaches_total: number;
+  fantasy: { manager_id: number; name: string; team_name: string; is_ready: boolean }[];
+  fantasy_ready: number;
+  fantasy_total: number;
+  all_ready: boolean;
+  advance_mode: string;
+  auto_advance_hours: number;
+  next_advance_at: string | null;
+  auto_advanced?: boolean;
+  advance_reason?: string;
+}
+
+export const advanceApi = {
+  readyStatus: (leagueId: number) =>
+    api.get<ReadyStatus>(`/leagues/${leagueId}/ready-status`),
+  markReady: (leagueId: number) =>
+    api.post<ReadyStatus>(`/leagues/${leagueId}/ready`),
+  forceAdvance: (leagueId: number) =>
+    api.post<{ advanced: boolean; reason: string }>(`/leagues/${leagueId}/force-advance`),
+  getSettings: (leagueId: number) =>
+    api.get<{ advance_mode: string; auto_advance_hours: number }>(`/leagues/${leagueId}/advance-settings`),
+  updateSettings: (leagueId: number, settings: { advance_mode?: string; auto_advance_hours?: number }) =>
+    api.put(`/leagues/${leagueId}/advance-settings`, settings),
+};
+
+export const offseasonApi = {
+  report: () => api.get<OffseasonReport>('/offseason/report'),
+};
+
+// --- Fantasy Football ---
+
+export interface FantasyLeagueSummary {
+  id: number;
+  league_id: number;
+  name: string;
+  num_teams: number;
+  scoring_type: string;
+  status: string;
+  draft_status: string;
+  invite_code: string;
+  is_member: boolean;
+  manager_count: number;
+  human_count: number;
+}
+
+export interface FantasyManager {
+  id: number;
+  fantasy_league_id: number;
+  coach_id: number | null;
+  team_name: string;
+  owner_name: string;
+  avatar_color: string;
+  is_ai: boolean;
+  personality: string | null;
+  wins: number;
+  losses: number;
+  ties: number;
+  points_for: number;
+  points_against: number;
+  streak: string;
+  playoff_seed: number | null;
+  is_eliminated: boolean;
+  is_champion: boolean;
+  win_pct?: number;
+  ppg?: number;
+  games_played?: number;
+  faab_remaining: number;
+  waiver_priority: number;
+}
+
+export interface FantasyLeagueDetail {
+  id: number;
+  name: string;
+  num_teams: number;
+  scoring_type: string;
+  scoring_rules: Record<string, number>;
+  roster_slots: Record<string, number>;
+  status: string;
+  draft_status: string;
+  invite_code: string;
+  playoff_start_week: number;
+  championship_week: number;
+  regular_season_end_week: number;
+  managers: FantasyManager[];
+  standings: FantasyManager[];
+  my_manager: FantasyManager | null;
+}
+
+export interface FantasyRosterPlayer {
+  player_id: number;
+  first_name: string;
+  last_name: string;
+  position: string;
+  overall_rating: number;
+  team_abbr: string;
+  team_name: string;
+  roster_slot: string;
+  is_starter: boolean;
+  acquired_via: string;
+  points?: number;
+}
+
+export interface FantasyMatchup {
+  id: number;
+  week: number;
+  manager1_id: number;
+  manager2_id: number;
+  team1_name: string;
+  team2_name: string;
+  owner1_name: string;
+  owner2_name: string;
+  manager1_score: number | null;
+  manager2_score: number | null;
+  winner_id: number | null;
+  is_playoff: boolean;
+  is_championship: boolean;
+  team1_roster?: FantasyRosterPlayer[];
+  team2_roster?: FantasyRosterPlayer[];
+}
+
+export interface FantasyDraftPick {
+  round: number;
+  pick: number;
+  manager_id: number;
+  manager_name: string;
+  team_name: string;
+  player_id: number;
+  player_name: string;
+  position: string;
+  overall: number;
+  is_ai: boolean;
+  first_name?: string;
+  last_name?: string;
+  overall_rating?: number;
+  details?: string;
+  player_pos?: string;
+  owner_name?: string;
+}
+
+export interface FantasyTradeProposal {
+  id: number;
+  proposer_name: string;
+  proposer_team: string;
+  recipient_name: string;
+  recipient_team: string;
+  players_offered: { id: number; first_name: string; last_name: string; position: string; overall_rating: number }[];
+  players_requested: { id: number; first_name: string; last_name: string; position: string; overall_rating: number }[];
+  message: string | null;
+  status: string;
+  is_mine: boolean;
+  can_respond: boolean;
+  created_at: string;
+}
+
+export interface FantasyTransaction {
+  id: number;
+  type: string;
+  owner_name: string;
+  team_name: string;
+  player_first: string;
+  player_last: string;
+  player_pos: string;
+  week: number;
+  created_at: string;
+}
+
+export const fantasyApi = {
+  leagues: () =>
+    api.get<{ fantasy_leagues: FantasyLeagueSummary[] }>('/fantasy/leagues').then(r => r.fantasy_leagues),
+  createLeague: (config: {
+    name: string;
+    num_teams: number;
+    max_humans: number;
+    scoring_type: string;
+    playoff_start_week: number;
+    num_playoff_teams: number;
+    draft_type: string;
+    draft_rounds: number;
+    waiver_type: string;
+    faab_budget?: number;
+    team_name: string;
+    owner_name: string;
+  }) => api.post<{ id: number; invite_code: string; num_teams: number; ai_managers: number }>('/fantasy/leagues', config),
+  getLeague: (id: number) =>
+    api.get<{ fantasy_league: FantasyLeagueDetail }>(`/fantasy/leagues/${id}`).then(r => r.fantasy_league),
+  joinLeague: (id: number, inviteCode: string, teamName: string, ownerName: string) =>
+    api.post<{ success: boolean; manager_id: number }>(`/fantasy/leagues/${id}/join`, {
+      invite_code: inviteCode, team_name: teamName, owner_name: ownerName,
+    }),
+  draft: (id: number) =>
+    api.post<{ success: boolean; picks: FantasyDraftPick[]; total_picks: number }>(`/fantasy/leagues/${id}/draft`),
+  draftResults: (id: number) =>
+    api.get<{ draft_picks: FantasyDraftPick[] }>(`/fantasy/leagues/${id}/draft-results`).then(r => r.draft_picks),
+  roster: (leagueId: number) =>
+    api.get<{ manager: FantasyManager; roster: FantasyRosterPlayer[] }>(`/fantasy/leagues/${leagueId}/roster`),
+  managerRoster: (managerId: number) =>
+    api.get<{ manager: FantasyManager; roster: FantasyRosterPlayer[] }>(`/fantasy/managers/${managerId}/roster`),
+  setLineup: (leagueId: number, lineup: { player_id: number; roster_slot: string; is_starter: boolean }[]) =>
+    api.put<{ roster: FantasyRosterPlayer[] }>(`/fantasy/leagues/${leagueId}/lineup`, { lineup }),
+  addDrop: (leagueId: number, addPlayerId: number, dropPlayerId: number) =>
+    api.post(`/fantasy/leagues/${leagueId}/add-drop`, {
+      add_player_id: addPlayerId, drop_player_id: dropPlayerId,
+    }),
+  matchups: (leagueId: number, week: number) =>
+    api.get<{ matchups: FantasyMatchup[] }>(`/fantasy/leagues/${leagueId}/matchups/${week}`).then(r => r.matchups),
+  standings: (leagueId: number) =>
+    api.get<{ standings: FantasyManager[] }>(`/fantasy/leagues/${leagueId}/standings`).then(r => r.standings),
+  schedule: (leagueId: number) =>
+    api.get<{ schedule: FantasyMatchup[]; manager: FantasyManager }>(`/fantasy/leagues/${leagueId}/schedule`),
+  availablePlayers: (leagueId: number, position?: string) =>
+    api.get<{ players: Player[] }>(`/fantasy/leagues/${leagueId}/available${position ? `?position=${position}` : ''}`).then(r => r.players),
+  trades: (leagueId: number) =>
+    api.get<{ trades: FantasyTradeProposal[] }>(`/fantasy/leagues/${leagueId}/trades`).then(r => r.trades),
+  proposeTrade: (leagueId: number, recipientId: number, playersOffered: number[], playersRequested: number[], message?: string) =>
+    api.post<{ status: string; message: string }>(`/fantasy/leagues/${leagueId}/trades`, {
+      recipient_id: recipientId, players_offered: playersOffered, players_requested: playersRequested, message,
+    }),
+  respondTrade: (tradeId: number, action: 'accept' | 'reject') =>
+    api.put(`/fantasy/trades/${tradeId}/respond`, { action }),
+  transactions: (leagueId: number) =>
+    api.get<{ transactions: FantasyTransaction[] }>(`/fantasy/leagues/${leagueId}/transactions`).then(r => r.transactions),
+  rankings: (leagueId: number, position?: string) =>
+    api.get<{ rankings: Player[] }>(`/fantasy/leagues/${leagueId}/rankings${position ? `?position=${position}` : ''}`).then(r => r.rankings),
+  playoffs: (leagueId: number) =>
+    api.get<{ bracket: FantasyMatchup[] }>(`/fantasy/leagues/${leagueId}/playoffs`).then(r => r.bracket),
+};
+
+// --- Records, History, Achievements Types ---
+
+export interface RecordEntry {
+  player_id: number;
+  first_name: string;
+  last_name: string;
+  position: string;
+  team: string;
+  season_year?: number;
+  seasons?: number;
+  total: number;
+}
+
+export interface RecordsData {
+  single_season: Record<string, { label: string; records: RecordEntry[] }>;
+  career: Record<string, { label: string; records: RecordEntry[] }>;
+  team_wins: { city: string; name: string; abbreviation: string; primary_color: string; season_year: number; wins: number; losses: number; ties: number }[];
+  biggest_blowouts: { week: number; season_year: number; home_team: string; away_team: string; home_score: number; away_score: number; margin: number }[];
+}
+
+export interface LeagueHistoryEntry {
+  year: number;
+  is_current: boolean;
+  champion: string | null;
+  mvp: string | null;
+  mvp_team?: string | null;
+  coach_of_year?: string | null;
+}
+
+export interface AchievementData {
+  id: string;
+  name: string;
+  desc: string;
+  icon: string;
+  unlocked: boolean;
+}

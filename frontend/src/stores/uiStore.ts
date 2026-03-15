@@ -12,9 +12,13 @@ interface UIState {
 
   tickerPaused: boolean;
   setTickerPaused: (v: boolean) => void;
+
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
+  initTheme: () => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
+export const useUIStore = create<UIState>((set, get) => ({
   sidebarOpen: true,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
@@ -26,4 +30,29 @@ export const useUIStore = create<UIState>((set) => ({
 
   tickerPaused: false,
   setTickerPaused: (tickerPaused) => set({ tickerPaused }),
+
+  theme: (localStorage.getItem('theme') as 'light' | 'dark') ?? 'dark',
+
+  toggleTheme: () => {
+    const current = get().theme;
+    const next = current === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('theme', next);
+    if (next === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    set({ theme: next });
+  },
+
+  initTheme: () => {
+    const saved = localStorage.getItem('theme') ?? 'dark';
+    const theme = saved as 'light' | 'dark';
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    set({ theme });
+  },
 }));
