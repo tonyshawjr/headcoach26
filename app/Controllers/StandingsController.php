@@ -559,7 +559,10 @@ class StandingsController
                         ELSE NULL END AS overall_rating,
                     CASE WHEN sa.winner_type = 'player'
                         THEN (SELECT p.image_url FROM players p WHERE p.id = sa.winner_id)
-                        ELSE NULL END AS image_url
+                        ELSE NULL END AS image_url,
+                    CASE WHEN sa.winner_type = 'coach'
+                        THEN (SELECT c.team_id FROM coaches c WHERE c.id = sa.winner_id)
+                        ELSE NULL END AS coach_team_id
              FROM season_awards sa
              WHERE sa.league_id = ?
              ORDER BY sa.season_year DESC, sa.award_type"
@@ -584,14 +587,19 @@ class StandingsController
                 ];
             }
 
+            // Parse stats JSON for extra info (e.g., Gridiron Classic team assignment)
+            $statsJson = json_decode($a['stats'] ?? '{}', true) ?: [];
+
             $entry = [
                 'winner_id' => (int) $a['winner_id'],
                 'winner_name' => $a['winner_name'],
-                'team_abbr' => $a['team_abbr'],
+                'team_abbr' => $a['team_abbr'] ?? $statsJson['team_abbr'] ?? $statsJson['team'] ?? null,
                 'team_color' => $a['team_color'],
-                'position' => $a['position'],
-                'overall_rating' => $a['overall_rating'] ? (int) $a['overall_rating'] : null,
+                'position' => $a['position'] ?? $statsJson['position'] ?? null,
+                'overall_rating' => !empty($a['overall_rating']) ? (int) $a['overall_rating'] : (!empty($statsJson['overall_rating']) ? (int) $statsJson['overall_rating'] : null),
                 'image_url' => $a['image_url'],
+                'team_label' => $statsJson['team'] ?? null, // "Team Barkley" etc. for Gridiron Classic
+                'coach_team_id' => !empty($a['coach_team_id']) ? (int) $a['coach_team_id'] : null,
             ];
 
             $type = $a['award_type'];

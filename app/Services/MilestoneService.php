@@ -175,6 +175,26 @@ class MilestoneService
         // 6. Loss streak 5+
         $milestones = array_merge($milestones, $this->checkLossStreak($leagueId, $seasonId, $week, $teams, $notifService));
 
+        // Generate narrative articles for significant milestones
+        if (!empty($milestones) && class_exists('App\\Services\\NarrativeEngine')) {
+            try {
+                $engine = new \App\Services\NarrativeEngine();
+                foreach ($milestones as $milestone) {
+                    try {
+                        $engine->generateMilestoneArticle($leagueId, $seasonId, $week, [
+                            'type' => $milestone['type'] ?? 'unknown',
+                            'team_id' => $milestone['team_id'] ?? null,
+                            'details' => $milestone['message'] ?? '',
+                        ]);
+                    } catch (\Throwable $e) {
+                        error_log("NarrativeEngine milestone article error: " . $e->getMessage());
+                    }
+                }
+            } catch (\Throwable $e) {
+                error_log("NarrativeEngine milestone init error: " . $e->getMessage());
+            }
+        }
+
         return $milestones;
     }
 
@@ -195,6 +215,7 @@ class MilestoneService
 
         $season = $this->getCurrentSeason($leagueId);
         $seasonYear = $season ? (int) $season['year'] : 0;
+        $seasonId = $season ? (int) $season['id'] : 0;
 
         foreach ($gameStats as $playerId => $stats) {
             $playerName = $this->getPlayerName((int) $playerId);
@@ -223,6 +244,26 @@ class MilestoneService
                         }
                     }
                 }
+            }
+        }
+
+        // Generate narrative articles for player game milestones
+        if (!empty($achieved) && class_exists('App\\Services\\NarrativeEngine')) {
+            try {
+                $engine = new \App\Services\NarrativeEngine();
+                foreach ($achieved as $milestone) {
+                    try {
+                        $engine->generateMilestoneArticle($leagueId, $seasonId, $week, [
+                            'type' => $milestone['milestone'] ?? 'game_milestone',
+                            'team_id' => $milestone['team_id'] ?? null,
+                            'details' => $milestone['message'] ?? '',
+                        ]);
+                    } catch (\Throwable $e) {
+                        error_log("NarrativeEngine game milestone article error: " . $e->getMessage());
+                    }
+                }
+            } catch (\Throwable $e) {
+                error_log("NarrativeEngine game milestone init error: " . $e->getMessage());
             }
         }
 

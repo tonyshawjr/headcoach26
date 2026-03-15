@@ -27,6 +27,23 @@ class OffseasonEngine
         // 1. Season Awards
         $awards = $this->calculateAwards($leagueId, $seasonYear);
 
+        // Generate narrative coverage for awards
+        if (!empty($awards) && class_exists('App\\Services\\NarrativeEngine')) {
+            try {
+                $seasonStmt = $this->db->prepare(
+                    "SELECT id FROM seasons WHERE league_id = ? AND is_current = 1 LIMIT 1"
+                );
+                $seasonStmt->execute([$leagueId]);
+                $seasonRow = $seasonStmt->fetch();
+                $seasonId = $seasonRow ? (int) $seasonRow['id'] : 0;
+
+                $narrativeEngine = new NarrativeEngine();
+                $narrativeEngine->generateAwardsCoverage($leagueId, $seasonId, $awards);
+            } catch (\Throwable $e) {
+                error_log("NarrativeEngine awards coverage error: " . $e->getMessage());
+            }
+        }
+
         // 2. Player aging & development
         $devChanges = $this->processPlayerDevelopment($leagueId);
         $improved = array_filter($devChanges, fn($c) => $c['type'] === 'improved');

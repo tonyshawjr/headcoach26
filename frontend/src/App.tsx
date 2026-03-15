@@ -51,6 +51,9 @@ const Scenarios = lazy(() => import('./pages/Scenarios'));
 const LeagueHistory = lazy(() => import('./pages/LeagueHistory'));
 const Achievements = lazy(() => import('./pages/Achievements'));
 
+// League Awards (lazy loaded)
+const LeagueAwards = lazy(() => import('./pages/LeagueAwards'));
+
 // Phase 4: Multiplayer Pages (lazy loaded)
 const MessageBoard = lazy(() => import('./pages/MessageBoard'));
 const CommissionerPage = lazy(() => import('./pages/CommissionerPage'));
@@ -193,6 +196,8 @@ export default function App() {
               <Route path="/scenarios" element={<Suspense fallback={<PageLoader />}><Scenarios /></Suspense>} />
               <Route path="/league-history" element={<Suspense fallback={<PageLoader />}><LeagueHistory /></Suspense>} />
               <Route path="/achievements" element={<Suspense fallback={<PageLoader />}><Achievements /></Suspense>} />
+              {/* League Awards */}
+              <Route path="/awards" element={<Suspense fallback={<PageLoader />}><LeagueAwards /></Suspense>} />
               {/* Phase 4: Multiplayer Pages */}
               <Route path="/messages" element={<Suspense fallback={<PageLoader />}><MessageBoard /></Suspense>} />
               <Route path="/commissioner" element={<Suspense fallback={<PageLoader />}><CommissionerPage /></Suspense>} />

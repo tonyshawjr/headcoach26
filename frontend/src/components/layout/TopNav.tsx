@@ -55,6 +55,7 @@ const navMenus: NavMenu[] = [
       { label: 'Playoffs', to: '/playoffs' },
       { label: 'Teams', to: '/teams', teamsSubmenu: true },
       { label: 'Leaders', to: '/leaders' },
+      { label: 'Awards', to: '/awards' },
       { label: 'Records', to: '/records' },
       { label: 'League Hub', to: '/league-hub' },
       { label: 'History', to: '/league-history' },

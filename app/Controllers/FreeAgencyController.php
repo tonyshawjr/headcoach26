@@ -105,6 +105,9 @@ class FreeAgencyController
 
         $results = $this->freeAgencyEngine->resolveBidding($leagueId);
 
+        // Generate narrative coverage for each signing
+        $this->generateSigningNarratives($leagueId, $results['signings'] ?? []);
+
         Response::success('Free agency bidding resolved', [
             'signings' => $results['signings'] ?? [],
             'unsigned' => $results['unsigned'] ?? [],
@@ -225,6 +228,9 @@ class FreeAgencyController
         }
 
         $results = $flowEngine->processFreeAgencyRound((int) $leagueId, $round);
+
+        // Generate narrative coverage for each signing in this round
+        $this->generateSigningNarratives((int) $leagueId, $results['signings'] ?? []);
 
         Response::success("Free agency round {$round} simulated", $results);
     }
@@ -353,5 +359,44 @@ class FreeAgencyController
             'pending_offers' => $offers,
             'my_rfas' => $myRFAs,
         ]);
+    }
+
+    /**
+     * Generate narrative signing stories for completed free agent signings.
+     * Non-critical — failures are logged but do not break FA flow.
+     */
+    private function generateSigningNarratives(int $leagueId, array $signings): void
+    {
+        if (empty($signings) || !class_exists('App\\Services\\NarrativeEngine')) {
+            return;
+        }
+
+        try {
+            $leagueModel = new \App\Models\League();
+            $league = $leagueModel->find($leagueId);
+            $week = $league ? (int) $league['current_week'] : 0;
+            $season = $leagueModel->getCurrentSeason($leagueId);
+            $seasonId = $season ? (int) $season['id'] : 0;
+
+            $engine = new \App\Services\NarrativeEngine();
+
+            foreach ($signings as $signing) {
+                try {
+                    $engine->generateSigningStory($leagueId, $seasonId, $week, [
+                        'team_id' => (int) ($signing['team_id'] ?? 0),
+                        'player_id' => (int) ($signing['player_id'] ?? 0),
+                        'player_name' => $signing['name'] ?? '',
+                        'position' => $signing['position'] ?? '',
+                        'overall_rating' => (int) ($signing['overall'] ?? 0),
+                        'salary' => (int) ($signing['salary'] ?? 0),
+                        'years' => (int) ($signing['years'] ?? 0),
+                    ]);
+                } catch (\Throwable $e) {
+                    error_log("NarrativeEngine signing story error: " . $e->getMessage());
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log("NarrativeEngine signing narratives error: " . $e->getMessage());
+        }
     }
 }

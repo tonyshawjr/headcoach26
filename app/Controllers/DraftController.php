@@ -156,6 +156,9 @@ class DraftController
             return;
         }
 
+        // Check if draft is now complete (no remaining picks)
+        $this->checkDraftComplete($auth['league_id']);
+
         Response::success('Draft pick made successfully', ['pick' => $result]);
     }
 
@@ -200,6 +203,9 @@ class DraftController
         }
 
         $results = $this->draftEngine->simulateDraft($leagueId);
+
+        // Generate draft coverage narrative after full draft simulation
+        $this->checkDraftComplete($leagueId);
 
         Response::success('Draft simulation completed', [
             'rounds' => $results['rounds'] ?? 0,
@@ -536,5 +542,56 @@ class DraftController
 
         $budget = $this->draftEngine->getScoutingBudget($leagueId);
         Response::json($budget);
+    }
+
+    /**
+     * Check if the draft is complete and generate narrative coverage if so.
+     */
+    private function checkDraftComplete(int $leagueId): void
+    {
+        if (!class_exists('App\\Services\\NarrativeEngine')) {
+            return;
+        }
+
+        try {
+            $pdo = \App\Database\Connection::getInstance()->getPdo();
+            $classId = $this->draftEngine->getCurrentClassId($leagueId);
+            if (!$classId) return;
+
+            // Check if any picks remain
+            $stmt = $pdo->prepare(
+                "SELECT COUNT(*) FROM draft_picks WHERE draft_class_id = ? AND is_used = 0"
+            );
+            $stmt->execute([$classId]);
+            $remaining = (int) $stmt->fetchColumn();
+
+            if ($remaining > 0) return;
+
+            // Draft is complete — gather all picks
+            $stmt = $pdo->prepare(
+                "SELECT dp.round, dp.pick_number, dp.current_team_id AS team_id, dp.player_id,
+                        p.first_name, p.last_name, p.position, p.overall_rating,
+                        t.city AS team_city, t.name AS team_name, t.abbreviation AS team_abbreviation
+                 FROM draft_picks dp
+                 LEFT JOIN players p ON p.id = dp.player_id
+                 LEFT JOIN teams t ON t.id = dp.current_team_id
+                 WHERE dp.draft_class_id = ? AND dp.is_used = 1
+                 ORDER BY dp.round ASC, dp.pick_number ASC"
+            );
+            $stmt->execute([$classId]);
+            $allPicks = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            if (empty($allPicks)) return;
+
+            // Get season ID
+            $leagueModel = new \App\Models\League();
+            $season = $leagueModel->getCurrentSeason($leagueId);
+            $seasonId = $season ? (int) $season['id'] : 0;
+
+            $engine = new \App\Services\NarrativeEngine();
+            $engine->generateDraftCoverage($leagueId, $seasonId, $allPicks);
+        } catch (\Throwable $e) {
+            error_log("NarrativeEngine draft coverage error: " . $e->getMessage());
+        }
     }
 }

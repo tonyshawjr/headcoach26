@@ -165,8 +165,37 @@ function CoachAgenda() {
 }
 
 /* ═══════════════════════════════════════════════════
-   Hero Article — large featured story
+   Featured Games — broadcast-style hero spotlight
    ═══════════════════════════════════════════════════ */
+
+function FeaturedGameCard({ game, label }: { game: Game; label: string }) {
+  const home = game.home_team;
+  const away = game.away_team;
+  const played = game.is_simulated;
+
+  return (
+    <Link to={played ? `/box-score/${game.id}` : `/game-plan/${game.id}`} className="block bg-black/50 hover:bg-black/40 transition-colors px-4 py-3">
+      {/* Label */}
+      <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-white/40 mb-2">{label}</p>
+
+      {/* Away team row */}
+      <div className="flex items-center gap-2 mb-1">
+        <TeamBadge abbreviation={away?.abbreviation} primaryColor={away?.primary_color} secondaryColor={away?.secondary_color} size="xs" />
+        <span className="text-sm font-semibold text-white flex-1">{away?.name}</span>
+        <span className="text-xs text-white/50">{away?.wins ?? 0}-{away?.losses ?? 0}</span>
+        {played && <span className="font-stat text-lg font-bold text-white ml-2">{game.away_score}</span>}
+      </div>
+
+      {/* Home team row */}
+      <div className="flex items-center gap-2">
+        <TeamBadge abbreviation={home?.abbreviation} primaryColor={home?.primary_color} secondaryColor={home?.secondary_color} size="xs" />
+        <span className="text-sm font-semibold text-white flex-1">{home?.name}</span>
+        <span className="text-xs text-white/50">{home?.wins ?? 0}-{home?.losses ?? 0}</span>
+        {played && <span className="font-stat text-lg font-bold text-white ml-2">{game.home_score}</span>}
+      </div>
+    </Link>
+  );
+}
 
 const typeConfig: Record<string, { label: string; color: string }> = {
   game_recap: { label: 'RECAP', color: 'var(--accent-blue)' },
@@ -175,70 +204,6 @@ const typeConfig: Record<string, { label: string; color: string }> = {
   column: { label: 'COLUMN', color: '#8b5cf6' },
   morning_blitz: { label: 'BLITZ', color: 'var(--accent-gold)' },
 };
-
-function HeroArticle({ article }: { article: Article }) {
-  const config = typeConfig[article.type] ?? { label: 'NEWS', color: 'var(--accent-blue)' };
-
-  return (
-    <Link to={`/article/${article.id}`} className="group block h-full">
-      <div className="relative overflow-hidden rounded-xl bg-[var(--bg-surface)] border border-[var(--border)] h-full min-h-[320px] flex flex-col justify-end">
-        {/* Dynamic team-color gradient + pattern + player photo */}
-        <ArticleHeroImage
-          teamId={article.team_id}
-          articleType={article.type}
-          articleId={article.id}
-        />
-
-        {/* Content at bottom */}
-        <div className="relative z-10 p-6 sm:p-8">
-          <span
-            className="inline-block rounded px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.15em] mb-3"
-            style={{ backgroundColor: config.color, color: '#fff' }}
-          >
-            {config.label}
-          </span>
-
-          <h2 className="font-display text-2xl sm:text-3xl leading-tight text-white tracking-tight">
-            {article.headline}
-          </h2>
-
-          <p className="mt-3 text-sm text-white/60 line-clamp-2 max-w-[600px]">
-            {(article.body ?? '').substring(0, 200)}...
-          </p>
-
-          <div className="mt-4 flex items-center gap-3 text-[11px] text-white/40">
-            {article.author_name && (
-              <span className="font-semibold text-white/60">{article.author_name}</span>
-            )}
-            {article.week != null && <span>Week {article.week}</span>}
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function HeroPlaceholder() {
-  const { league } = useAuthStore();
-  const phase = league?.phase ?? 'preseason';
-
-  const messages: Record<string, string> = {
-    preseason: 'Start the season to generate game recaps and news.',
-    regular: 'Play games to see headlines and stories here.',
-    playoffs: 'Playoff coverage will appear here.',
-    offseason: 'Offseason news will appear once moves are made.',
-  };
-
-  return (
-    <div className="relative overflow-hidden rounded-xl bg-[var(--bg-surface)] border border-[var(--border)] h-full min-h-[320px] flex flex-col items-center justify-center">
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-      <div className="relative z-10 text-center px-6">
-        <CalendarDays className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
-        <p className="font-display text-xl text-white/80">{messages[phase] ?? 'No stories yet.'}</p>
-      </div>
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════════
    Side Article — vertical accent bar + headline
@@ -263,10 +228,10 @@ function SideArticle({ article }: { article: Article }) {
 
       {/* Text */}
       <div className="min-w-0 flex-1">
-        <h3 className="text-[14px] font-bold leading-snug text-[var(--text-primary)] line-clamp-3">
+        <h3 className="text-base font-bold leading-snug text-[var(--text-primary)] line-clamp-3">
           {article.headline}
         </h3>
-        <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+        <div className="mt-2 flex items-center gap-2 text-sm text-[var(--text-muted)]">
           {article.author_name && <span className="font-semibold">{article.author_name}</span>}
           {article.week != null && (
             <>
@@ -305,13 +270,13 @@ function TeamSnapshot() {
     <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">
       <div className="flex items-center gap-3 mb-3">
         <TeamBadge abbreviation={team?.abbreviation} primaryColor={team?.primary_color} secondaryColor={team?.secondary_color} size="sm" />
-        <p className="font-display text-sm text-[var(--text-primary)] tracking-tight">{team?.city} {team?.name}</p>
+        <p className="font-display text-base text-[var(--text-primary)] tracking-tight">{team?.city} {team?.name}</p>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {stats.map((s) => (
           <div key={s.label} className="text-center rounded-lg bg-[var(--bg-elevated)] px-2 py-2">
-            <p className="text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{s.label}</p>
-            <p className="text-sm font-bold text-[var(--text-primary)] font-stat">{s.value}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{s.label}</p>
+            <p className="text-base font-bold text-[var(--text-primary)] font-stat">{s.value}</p>
           </div>
         ))}
       </div>
@@ -347,8 +312,8 @@ function StandingsSnapshot() {
         {sorted.map((t, i) => {
           const isMe = t.id === team.id;
           return (
-            <div key={t.id} className={`flex items-center gap-2 py-1.5 px-2 rounded text-[12px] ${isMe ? 'bg-[var(--accent-blue)]/8' : ''}`}>
-              <span className="w-3 text-[10px] text-[var(--text-muted)] font-stat">{i + 1}</span>
+            <div key={t.id} className={`flex items-center gap-2 py-2 px-2 rounded text-sm ${isMe ? 'bg-[var(--accent-blue)]/8' : ''}`}>
+              <span className="w-3 text-xs text-[var(--text-muted)] font-stat">{i + 1}</span>
               <TeamBadge abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="xs" />
               <span className={`flex-1 font-medium ${isMe ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{t.abbreviation}</span>
               <span className="font-stat text-[var(--text-secondary)]">{t.wins}-{t.losses}</span>
@@ -420,16 +385,62 @@ export default function Dashboard() {
   const allGamesForPlan = schedule ? Object.values(schedule).flat() : [];
   const hasGamePlan = allGamesForPlan.some((g) => g.is_simulated);
 
-  // Find next game
+  const week = league?.current_week ?? 0;
+
+  // Find my game (next unplayed, or most recent played)
+  let myGame: Game | null = null;
   let nextGame: Game | null = null;
-  if (schedule && team) {
+  if (schedule && team && week > 0) {
+    const weekGames = schedule[String(week)] ?? [];
+    myGame = weekGames.find((g) => g.home_team_id === team.id || g.away_team_id === team.id) ?? null;
+    // Also find next unplayed for game plan link
     const allGames = Object.values(schedule).flat();
     const myGames = allGames.filter((g) => g.home_team_id === team.id || g.away_team_id === team.id);
     nextGame = myGames.sort((a, b) => a.week - b.week).find((g) => !g.is_simulated) ?? null;
   }
 
+  // Find relevant "Game to Watch" — division rival matchup, playoff contenders, etc.
+  let relevantGame: Game | null = null;
+  if (schedule && team && week > 0) {
+    const weekGames = (schedule[String(week)] ?? []).filter(
+      (g) => g.home_team_id !== team.id && g.away_team_id !== team.id && g.is_simulated === false
+    );
+
+    // Priority: same division matchup
+    const sameDivGame = weekGames.find((g) => {
+      const h = g.home_team;
+      const a = g.away_team;
+      return h?.division === team.division && a?.division === team.division &&
+             h?.conference === team.conference && a?.conference === team.conference;
+    });
+
+    if (sameDivGame) {
+      relevantGame = sameDivGame;
+    } else {
+      // Fallback: highest combined record
+      const sorted = [...weekGames].sort((a, b) => {
+        const aRec = (a.home_team?.wins ?? 0) + (a.away_team?.wins ?? 0);
+        const bRec = (b.home_team?.wins ?? 0) + (b.away_team?.wins ?? 0);
+        return bRec - aRec;
+      });
+      relevantGame = sorted[0] ?? null;
+    }
+
+    // If all games are simulated, show the best result
+    if (!relevantGame) {
+      const simmedOtherGames = (schedule[String(week)] ?? []).filter(
+        (g) => g.home_team_id !== team.id && g.away_team_id !== team.id && g.is_simulated
+      );
+      const sorted = [...simmedOtherGames].sort((a, b) => {
+        const aRec = (a.home_team?.wins ?? 0) + (a.away_team?.wins ?? 0);
+        const bRec = (b.home_team?.wins ?? 0) + (b.away_team?.wins ?? 0);
+        return bRec - aRec;
+      });
+      relevantGame = sorted[0] ?? null;
+    }
+  }
+
   const articles = articlesResp?.articles ?? [];
-  const heroArticle = articles[0] ?? null;
   const sideArticles = articles.slice(1, 6);
 
   return (
@@ -442,10 +453,107 @@ export default function Dashboard() {
       {/* 1. Coach's Agenda — slim bar */}
       <CoachAgenda />
 
-      {/* 2. Editorial: Hero article + side articles */}
+      {/* 2. Broadcast Hero (article + featured games inside one box) + Latest News */}
       <div className="grid gap-5 lg:grid-cols-[1fr_320px] items-stretch">
         <div className="flex flex-col">
-          {heroArticle ? <HeroArticle article={heroArticle} /> : <HeroPlaceholder />}
+          <div className="relative overflow-hidden rounded-xl flex flex-col">
+            {/* Background: article hero image or dark gradient */}
+            {articles.length > 0 ? (
+              <ArticleHeroImage
+                teamId={articles[0].team_id}
+                articleType={articles[0].type}
+                articleId={articles[0].id}
+              />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a1a] to-[#1a1a2e]" />
+            )}
+
+            {/* Article headline overlay */}
+            <Link to={articles.length > 0 ? `/article/${articles[0].id}` : '/league-hub'} className="relative z-10 flex-1 min-h-[260px] flex flex-col justify-end p-6 sm:p-8">
+              {articles.length > 0 ? (
+                <>
+                  <span
+                    className="inline-block rounded px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.15em] mb-3 w-fit"
+                    style={{ backgroundColor: (typeConfig[articles[0].type] ?? typeConfig.game_recap).color, color: '#fff' }}
+                  >
+                    {(typeConfig[articles[0].type] ?? { label: 'NEWS' }).label}
+                  </span>
+                  <h2 className="font-display text-4xl sm:text-5xl lg:text-6xl font-black uppercase leading-[0.95] text-white tracking-tight">
+                    {articles[0].headline}
+                  </h2>
+                  <p className="mt-3 text-base text-white/60 line-clamp-2 max-w-[600px]">
+                    {(articles[0].body ?? '').substring(0, 200)}...
+                  </p>
+                </>
+              ) : (
+                <p className="font-display text-xl text-white/50">Headlines appear as games are played</p>
+              )}
+            </Link>
+
+            {/* Featured games / offseason boxes — inside the same card at the bottom */}
+            <div className="relative z-10">
+              {(phase === 'regular' || phase === 'playoffs') && (myGame || relevantGame) && (
+                <>
+                  <div className="px-6 py-2 flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">
+                      Featured Games
+                    </span>
+                    <div className="h-[2px] w-6 bg-[var(--accent-blue)] rounded-full" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-[1px] bg-black/30">
+                    {myGame && (
+                      <FeaturedGameCard game={myGame} label={myGame.is_simulated ? 'Final' : 'Your Game'} />
+                    )}
+                    {relevantGame && (
+                      <FeaturedGameCard game={relevantGame} label={relevantGame.is_simulated ? 'Final' : 'Game to Watch'} />
+                    )}
+                    {/* If only one game, fill second slot */}
+                    {myGame && !relevantGame && (
+                      <div className="bg-black/40 flex items-center justify-center py-4">
+                        <span className="text-sm text-white/30">No other featured games</span>
+                      </div>
+                    )}
+                    {!myGame && relevantGame && (
+                      <div className="bg-black/40 flex items-center justify-center py-4">
+                        <span className="text-sm text-white/30">Bye Week</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {phase === 'offseason' && (
+                <>
+                  <div className="px-6 py-2 flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">
+                      Offseason
+                    </span>
+                    <div className="h-[2px] w-6 bg-[var(--accent-gold)] rounded-full" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-[1px] bg-black/30">
+                    <Link to="/free-agency" className="block bg-black/50 hover:bg-black/40 transition-colors px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <UserPlus className="h-5 w-5 text-white/60 shrink-0" />
+                        <div>
+                          <p className="font-display text-sm font-bold uppercase text-white tracking-tight">Free Agency</p>
+                          <p className="text-xs text-white/40 mt-0.5">Browse &amp; bid</p>
+                        </div>
+                      </div>
+                    </Link>
+                    <Link to="/draft" className="block bg-black/50 hover:bg-black/40 transition-colors px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <GraduationCap className="h-5 w-5 text-white/60 shrink-0" />
+                        <div>
+                          <p className="font-display text-sm font-bold uppercase text-white tracking-tight">Draft Room</p>
+                          <p className="text-xs text-white/40 mt-0.5">Scout prospects</p>
+                        </div>
+                      </div>
+                    </Link>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="flex flex-col">

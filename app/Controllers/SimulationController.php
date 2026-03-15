@@ -391,6 +391,16 @@ class SimulationController
                     ];
 
                     $engine->generateGameContent($freshGame, $gameResult, $seasonId);
+
+                    // Generate additional playoff narrative content for playoff games
+                    $playoffTypes = ['wild_card', 'divisional', 'conference_championship', 'super_bowl', 'big_game'];
+                    if (in_array($freshGame['game_type'] ?? '', $playoffTypes, true)) {
+                        try {
+                            $engine->generatePlayoffContent($leagueId, $seasonId, $week, $freshGame, $gameResult);
+                        } catch (\Throwable $pe) {
+                            error_log("NarrativeEngine playoff content error: " . $pe->getMessage());
+                        }
+                    }
                 }
             }
 

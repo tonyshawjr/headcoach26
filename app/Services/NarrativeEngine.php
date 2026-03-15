@@ -1099,4 +1099,1074 @@ class NarrativeEngine
 
         return $paragraph;
     }
+
+    // ─── Playoff Content ──────────────────────────────────────────────
+
+    /**
+     * Generate playoff-specific articles after each playoff game.
+     */
+    public function generatePlayoffContent(int $leagueId, int $seasonId, int $week, array $game, array $result): void
+    {
+        $home = $this->getTeam($game['home_team_id']);
+        $away = $this->getTeam($game['away_team_id']);
+
+        $homeScore = (int)($result['home_score'] ?? 0);
+        $awayScore = (int)($result['away_score'] ?? 0);
+        $winner = $homeScore > $awayScore ? $home : $away;
+        $loser = $homeScore > $awayScore ? $away : $home;
+        $winScore = max($homeScore, $awayScore);
+        $loseScore = min($homeScore, $awayScore);
+        $margin = $winScore - $loseScore;
+
+        $winnerName = $winner['city'] . ' ' . $winner['name'];
+        $loserName = $loser['city'] . ' ' . $loser['name'];
+
+        $boxScore = $result['box_score'] ?? [];
+        $gameLog = $result['game_log'] ?? $boxScore['game_log'] ?? [];
+        $gameClass = $result['game_class'] ?? $boxScore['game_class'] ?? $this->classifyFromScores($homeScore, $awayScore, $gameLog);
+        $gameType = $gameClass['type'] ?? 'solid_win';
+
+        $homeStats = $result['home_stats'] ?? $boxScore['home']['stats'] ?? [];
+        $awayStats = $result['away_stats'] ?? $boxScore['away']['stats'] ?? [];
+        $winnerStats = $homeScore > $awayScore ? $homeStats : $awayStats;
+        $loserStats = $homeScore > $awayScore ? $awayStats : $homeStats;
+        $winnerStar = $this->findTopPerformer($winnerStats);
+        $loserStar = $this->findTopPerformer($loserStats);
+
+        // Determine round
+        $gameType2 = $game['game_type'] ?? 'wild_card';
+        $roundLabels = [
+            'wild_card' => 'Wild Card',
+            'divisional' => 'Divisional Round',
+            'conference_championship' => 'Conference Championship',
+            'super_bowl' => 'Super Bowl',
+        ];
+        $roundLabel = $roundLabels[$gameType2] ?? 'Playoff';
+        $isSuperBowl = $gameType2 === 'super_bowl';
+
+        $winnerSeed = $winner['seed'] ?? '';
+        $loserSeed = $loser['seed'] ?? '';
+        $seedContext = '';
+        if ($winnerSeed && $loserSeed) {
+            $seedContext = "The No. {$winnerSeed} seed {$winnerName} over the No. {$loserSeed} seed {$loserName}";
+            $isUpset = (int)$winnerSeed > (int)$loserSeed;
+        } else {
+            $isUpset = false;
+        }
+
+        // Select columnist based on game drama
+        if (in_array($gameType, ['thriller', 'comeback'])) {
+            $columnist = self::COLUMNISTS['marcus_bell'];
+            $columnistKey = 'marcus_bell';
+        } elseif (in_array($gameType, ['blowout', 'defensive_battle'])) {
+            $columnist = self::COLUMNISTS['terry_hollis'];
+            $columnistKey = 'terry_hollis';
+        } else {
+            $columnist = $this->selectColumnist($gameType);
+            $columnistKey = array_search($columnist, self::COLUMNISTS) ?: 'dana_reeves';
+        }
+
+        $starName = $winnerStar ? ($winnerStar['first_name'] . ' ' . $winnerStar['last_name']) : null;
+        $starLine = $winnerStar ? $this->formatDetailedStatLine($winnerStar) : '';
+        $loserStarName = $loserStar ? ($loserStar['first_name'] . ' ' . $loserStar['last_name']) : null;
+        $loserStarLine = $loserStar ? $this->formatDetailedStatLine($loserStar) : '';
+        $now = date('Y-m-d H:i:s');
+
+        // --- Winner article ---
+        $headline = $this->generatePlayoffHeadline($roundLabel, $gameType2, $winnerName, $loserName, $winScore, $loseScore, $isUpset, $starName, $winnerSeed, $loserSeed);
+
+        $paragraphs = [];
+
+        // Paragraph 1: Lede
+        if ($isSuperBowl) {
+            $paragraphs[] = $this->pickOne([
+                "Confetti rains down. The {$winnerName} are Super Bowl Champions. In a {$winScore}-{$loseScore} victory over the {$loserName}, the {$winner['name']} etched their names into football immortality and delivered a championship to a franchise that has waited for this moment.",
+                "It is over. The {$winnerName} have done it. With a {$winScore}-{$loseScore} triumph over the {$loserName} in Super Bowl, the {$winner['name']} stand alone at the mountaintop, crowned as the best team in football.",
+                "Champions. The {$winnerName} defeated the {$loserName} {$winScore}-{$loseScore} in a Super Bowl that will be remembered for generations. When the final whistle blew, the celebration erupted. A city can finally exhale.",
+            ]);
+        } elseif ($isUpset && $gameType2 === 'wild_card') {
+            $paragraphs[] = $this->pickOne([
+                "Upset! The {$winnerName}, a No. {$winnerSeed} seed, walked into hostile territory and stunned the No. {$loserSeed} {$loserName} {$winScore}-{$loseScore} in a Wild Card game that nobody saw coming.",
+                "So much for the home-field advantage. The {$winnerName} pulled off the upset of the postseason, knocking off the favored {$loserName} {$winScore}-{$loseScore} in the Wild Card round.",
+            ]);
+        } else {
+            $paragraphs[] = $this->pickOne([
+                "The {$winnerName} are moving on. A {$winScore}-{$loseScore} {$roundLabel} victory over the {$loserName} punches their ticket to the next round, and this team looks like it has no intention of slowing down.",
+                "{$roundLabel}: Mission accomplished. The {$winnerName} dispatched the {$loserName} {$winScore}-{$loseScore} and advance in the postseason with a performance that showcased everything this team is about.",
+                "One more down, and the {$winnerName}'s championship dream stays alive. A {$winScore}-{$loseScore} victory over the {$loserName} in the {$roundLabel} sends them marching forward into the next round.",
+            ]);
+        }
+
+        // Paragraph 2: Star performance
+        if ($starName) {
+            $paragraphs[] = $this->pickOne([
+                "{$starName} delivered when the stage was biggest, {$starLine}. In a game of this magnitude, you need your best players to be their best, and {$starName} answered the call in emphatic fashion.",
+                "On the biggest stage of the season, {$starName} was sensational, {$starLine}. This is the kind of performance that cements a legacy, the kind of game film that future generations will study.",
+                "Give the game ball to {$starName}. {$starLine}. When playoff pressure tightened its grip, {$starName} played loose, played free, and played at an elite level.",
+            ]);
+        } else {
+            $paragraphs[] = "This was a collective effort from the {$winnerName}, with contributions up and down the roster. No single star, just a team that believed and executed when it mattered most.";
+        }
+
+        // Paragraph 3: Game flow / key moment
+        if ($gameType === 'comeback') {
+            $paragraphs[] = "The {$winnerName} trailed in the fourth quarter, and the season hung in the balance. But playoff teams find a way, and the {$winner['name']} did exactly that, stringing together a rally that will be replayed for years. The {$loserName} had victory in their grasp and watched helplessly as it slipped away.";
+        } elseif ($gameType === 'thriller') {
+            $paragraphs[] = "Neither team could build a comfortable margin, and the game came down to the final minutes. With the score {$winScore}-{$loseScore}, every snap carried the weight of an entire season. The {$winnerName} made one more play than the {$loserName}, and in the playoffs, that is all the difference in the world.";
+        } elseif ($gameType === 'blowout') {
+            $paragraphs[] = "This one was over early. The {$winnerName} imposed their will from the opening possession, building a lead that felt insurmountable by halftime. The {$loserName} never found their footing, never gained traction, and never truly threatened. A {$margin}-point margin flatters the losing side.";
+        } else {
+            $paragraphs[] = "The {$winnerName} controlled the game's tempo throughout, methodically building their lead and never giving the {$loserName} an opening. When the {$loser['name']} made a push, the {$winner['name']} had an answer. That is what separates playoff teams from pretenders.";
+        }
+
+        // Paragraph 4: What's next
+        if ($isSuperBowl) {
+            $paragraphs[] = "For the {$winnerName}, the journey is complete. From training camp through the regular season, through every playoff battle, it all led to this moment. The parade route is being planned. The rings are being designed. The {$winner['name']} are champions, and nobody can take that away from them.";
+            $paragraphs[] = "In the losing locker room, the {$loserName} sit in stunned silence. They came within {$margin} points of the ultimate prize. The sting of this loss will fuel them through the offseason, but tonight, it simply hurts. They gave everything they had, and it was not quite enough.";
+        } elseif ($gameType2 === 'conference_championship') {
+            $paragraphs[] = "Next stop: the Super Bowl. The {$winnerName} have punched their ticket to the biggest game in sports. After dismantling the {$loserName} in the Conference Championship, this team has earned its place on the grandest stage. The question now is whether anyone can stop them.";
+        } elseif ($gameType2 === 'divisional') {
+            $paragraphs[] = "The {$winnerName} advance to the Conference Championship, where the stakes only get higher and the margin for error shrinks to nothing. But this team has proven it belongs, and after dispatching the {$loserName}, confidence is sky-high.";
+        } else {
+            $paragraphs[] = "The {$winnerName} move on to the Divisional Round, where they will face a tougher test. But after tonight's performance, there is reason to believe this team has the talent and the toughness to keep advancing.";
+        }
+
+        // Paragraph 5: Elimination narrative for the loser
+        if ($isSuperBowl) {
+            // Already covered above
+        } else {
+            $paragraphs[] = "For the {$loserName}, the season is over. The lockers will be cleaned out, the exit interviews will be conducted, and an offseason of reflection begins. " . ($loserStarName
+                ? "{$loserStarName} gave everything in a losing effort, {$loserStarLine}, but it was not enough to extend the season."
+                : "Despite a valiant effort, the {$loser['name']} come up short in their bid to advance.");
+        }
+
+        $body = implode("\n\n", $paragraphs);
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, $week, 'playoff_recap',
+            $headline, $body,
+            $columnist['name'], $columnistKey,
+            $winner['id'], $game['id'] ?? null,
+            $now,
+        ]);
+
+        // Generate ticker items for the playoff result
+        $tickerText = $isSuperBowl
+            ? "SUPER BOWL CHAMPIONS: {$winner['abbreviation']} {$winScore}, {$loser['abbreviation']} {$loseScore} - FINAL"
+            : "{$roundLabel}: {$winner['abbreviation']} {$winScore}, {$loser['abbreviation']} {$loseScore} - FINAL";
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO ticker_items (league_id, text, type, team_id, week, created_at) VALUES (?, ?, 'playoff', ?, ?, ?)"
+        );
+        $stmt->execute([$leagueId, $tickerText, $winner['id'], $week, $now]);
+    }
+
+    /**
+     * Generate a playoff-specific headline.
+     */
+    private function generatePlayoffHeadline(string $roundLabel, string $gameType, string $winnerName, string $loserName, int $winScore, int $loseScore, bool $isUpset, ?string $starName, $winnerSeed, $loserSeed): string
+    {
+        if ($gameType === 'super_bowl') {
+            return $this->pickOne([
+                "SUPER BOWL CHAMPIONS: {$winnerName} Crowned After {$winScore}-{$loseScore} Victory",
+                "SUPER BOWL: {$winnerName} Defeat {$loserName} {$winScore}-{$loseScore} to Win It All",
+                $starName ? "SUPER BOWL: {$starName} Leads {$winnerName} to Championship Glory" : "SUPER BOWL: {$winnerName} Are Champions of the World",
+            ]);
+        }
+
+        if ($isUpset && $gameType === 'wild_card') {
+            return $this->pickOne([
+                "Wild Card Upset: {$winnerName} Stun No. {$loserSeed} {$loserName}, {$winScore}-{$loseScore}",
+                "UPSET: No. {$winnerSeed} {$winnerName} Knock Off {$loserName} in Wild Card Stunner",
+                $starName ? "{$starName} Powers Wild Card Upset as {$winnerName} Shock {$loserName}" : "Wild Card Shocker: {$winnerName} Topple Favored {$loserName}",
+            ]);
+        }
+
+        if ($gameType === 'conference_championship') {
+            return $this->pickOne([
+                "{$winnerName} Headed to the Super Bowl After {$winScore}-{$loseScore} Win",
+                "Conference Championship: {$winnerName} Punch Super Bowl Ticket",
+                $starName ? "{$starName} Sends {$winnerName} to the Super Bowl" : "{$winnerName} Advance to Super Bowl with Dominant Performance",
+            ]);
+        }
+
+        if ($gameType === 'divisional') {
+            return $this->pickOne([
+                "{$roundLabel}: {$winnerName} Punch Ticket to Conference Championship",
+                "{$winnerName} Advance Past {$loserName} in {$roundLabel}, {$winScore}-{$loseScore}",
+                $starName ? "{$starName} Leads {$winnerName} Past {$loserName} in {$roundLabel}" : "{$winnerName} Roll Past {$loserName} in Divisional Showdown",
+            ]);
+        }
+
+        // Generic wild card / default
+        return $this->pickOne([
+            "{$winnerName} Advance Past {$loserName} in {$roundLabel} Win, {$winScore}-{$loseScore}",
+            "{$roundLabel}: {$winnerName} Defeat {$loserName} {$winScore}-{$loseScore}",
+            $starName ? "{$starName} Stars as {$winnerName} Win {$roundLabel} Matchup" : "{$winnerName} Earn {$roundLabel} Victory Over {$loserName}",
+        ]);
+    }
+
+    // ─── Playoff Preview ──────────────────────────────────────────────
+
+    /**
+     * Generate preview articles for upcoming playoff matchups.
+     */
+    public function generatePlayoffPreview(int $leagueId, int $seasonId, int $week, array $matchups): void
+    {
+        $now = date('Y-m-d H:i:s');
+        $columnist = self::COLUMNISTS['dana_reeves'];
+        $columnistKey = 'dana_reeves';
+
+        foreach ($matchups as $matchup) {
+            $home = $this->getTeam($matchup['home_team_id']);
+            $away = $this->getTeam($matchup['away_team_id']);
+
+            if (empty($home) || empty($away)) continue;
+
+            $homeName = $home['city'] . ' ' . $home['name'];
+            $awayName = $away['city'] . ' ' . $away['name'];
+            $homeRecord = ($home['wins'] ?? 0) . '-' . ($home['losses'] ?? 0);
+            $awayRecord = ($away['wins'] ?? 0) . '-' . ($away['losses'] ?? 0);
+            $homeSeed = $home['seed'] ?? '';
+            $awaySeed = $away['seed'] ?? '';
+            $gameType = $matchup['game_type'] ?? 'wild_card';
+            $roundLabels = [
+                'wild_card' => 'Wild Card',
+                'divisional' => 'Divisional Round',
+                'conference_championship' => 'Conference Championship',
+                'super_bowl' => 'Super Bowl',
+            ];
+            $roundLabel = $roundLabels[$gameType] ?? 'Playoff';
+            $isSuperBowl = $gameType === 'super_bowl';
+
+            // Determine the "underdog" for narrative purposes
+            $homeWins = (int)($home['wins'] ?? 0);
+            $awayWins = (int)($away['wins'] ?? 0);
+            $favored = $homeWins >= $awayWins ? $home : $away;
+            $underdog = $homeWins >= $awayWins ? $away : $home;
+            $favoredName = $favored['city'] . ' ' . $favored['name'];
+            $underdogName = $underdog['city'] . ' ' . $underdog['name'];
+            $underdogSeed = $underdog === $home ? $homeSeed : $awaySeed;
+            $favoredSeed = $favored === $home ? $homeSeed : $awaySeed;
+
+            // Headline
+            if ($isSuperBowl) {
+                $headline = $this->pickOne([
+                    "Super Bowl Preview: {$homeName} vs. {$awayName} for All the Marbles",
+                    "The Big Game: Breaking Down {$homeName} vs. {$awayName}",
+                    "Super Bowl Breakdown: Can the {$underdog['name']} Pull Off the Upset?",
+                ]);
+            } else {
+                $headline = $this->pickOne([
+                    "{$roundLabel} Preview: Can the " . ($underdogSeed ? "No. {$underdogSeed} " : '') . "{$underdogName} Pull Off the Upset?",
+                    "{$roundLabel} Preview: {$homeName} ({$homeRecord}) vs. {$awayName} ({$awayRecord})",
+                    "{$roundLabel} Breakdown: {$favoredName} Host {$underdogName} with Season on the Line",
+                ]);
+            }
+
+            // Build preview paragraphs
+            $paragraphs = [];
+
+            // Paragraph 1: Setting the stage
+            if ($isSuperBowl) {
+                $paragraphs[] = "This is it. The {$homeName} ({$homeRecord}) and the {$awayName} ({$awayRecord}) meet in the Super Bowl, the culmination of an entire season's worth of blood, sweat, and Sunday afternoons. Both teams have survived the gauntlet of the playoffs, and now just sixty minutes of football stand between one of them and immortality.";
+            } else {
+                $paragraphs[] = $this->pickOne([
+                    "The {$roundLabel} brings us a fascinating matchup between the {$homeName} ({$homeRecord}) and the {$awayName} ({$awayRecord}). Both teams earned their place in the postseason, but only one will advance. The stakes could not be higher.",
+                    "When the {$homeName} ({$homeRecord}) host the {$awayName} ({$awayRecord}) in the {$roundLabel}, something has to give. These are two teams that have proven they belong, but the postseason is unforgiving, and one of them will be headed home.",
+                ]);
+            }
+
+            // Paragraph 2: Strengths
+            $paragraphs[] = $this->pickOne([
+                "The {$favoredName} enter as the favorites, and for good reason. Their " . ($favoredSeed ? "No. {$favoredSeed} seed reflects " : "record reflects ") . "a season of consistent excellence. They have the roster depth, the coaching, and the experience to thrive under postseason pressure.",
+                "On paper, the {$favoredName} have the edge. They posted a superior record during the regular season and have home-field advantage working in their favor. Their ability to win in different ways throughout the year makes them a dangerous opponent in any single-elimination scenario.",
+            ]);
+
+            // Paragraph 3: The underdog case
+            $paragraphs[] = $this->pickOne([
+                "But do not count out the {$underdogName}. The regular season record does not always tell the full story, and this is a team that has shown flashes of brilliance throughout the year. If they can execute their game plan and avoid critical turnovers, they have the talent to pull off the upset.",
+                "The {$underdogName}, however, are not here to play the role of sacrificial lamb. They earned their postseason berth the hard way, and playoff football is its own animal. Records get thrown out the window, and this {$underdog['name']} squad has the kind of players who thrive when the pressure mounts.",
+            ]);
+
+            // Paragraph 4: Key matchups
+            $paragraphs[] = $this->pickOne([
+                "The key matchup to watch will be in the trenches. Whichever team wins the battle at the line of scrimmage will likely win the game. The ability to control the clock through the run game and generate pressure on the opposing quarterback will be the difference between advancing and going home.",
+                "This game could come down to turnovers and third-down efficiency. In playoff football, the team that protects the ball and converts on third down almost always prevails. Both teams have the defensive talent to force mistakes, so discipline and execution will be paramount.",
+            ]);
+
+            // Paragraph 5: Prediction
+            $paragraphs[] = $this->pickOne([
+                "Prediction: The {$favoredName} have earned the right to be favorites, and I expect them to advance in a competitive game. But the {$underdogName} will not go quietly. This has the makings of a game that comes down to the fourth quarter.",
+                "If forced to pick, I lean toward the {$favoredName}, but this is the playoffs, where certainty goes to die. The {$underdogName} have nothing to lose, and that makes them the most dangerous opponent imaginable.",
+            ]);
+
+            $body = implode("\n\n", $paragraphs);
+
+            $stmt = $this->db->prepare(
+                "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)"
+            );
+            $stmt->execute([
+                $leagueId, $seasonId, $week, 'feature',
+                $headline, $body,
+                $columnist['name'], $columnistKey,
+                null, null,
+                $now,
+            ]);
+        }
+    }
+
+    // ─── Draft Coverage ───────────────────────────────────────────────
+
+    /**
+     * Generate draft coverage articles after the draft completes.
+     */
+    public function generateDraftCoverage(int $leagueId, int $seasonId, array $picks): void
+    {
+        if (empty($picks)) return;
+
+        $now = date('Y-m-d H:i:s');
+
+        // Article 1: First overall pick spotlight (Marcus Bell — human drama)
+        $firstPick = null;
+        foreach ($picks as $pick) {
+            if (($pick['pick'] ?? 0) === 1 && ($pick['round'] ?? 0) === 1) {
+                $firstPick = $pick;
+                break;
+            }
+        }
+        if (!$firstPick) {
+            $firstPick = $picks[0]; // fallback
+        }
+
+        $firstTeam = $this->getTeam($firstPick['team_id']);
+        $firstTeamName = $firstTeam['city'] . ' ' . $firstTeam['name'];
+        $playerName = $firstPick['player_name'] ?? 'Unknown';
+        $position = $firstPick['position'] ?? 'Unknown';
+        $pickNum = $firstPick['pick'] ?? 1;
+        $pickOrdinal = $this->ordinal($pickNum);
+
+        $columnist = self::COLUMNISTS['marcus_bell'];
+
+        $paragraphs = [];
+        $paragraphs[] = $this->pickOne([
+            "The moment {$playerName}'s name was called, a new chapter began. The {$firstTeamName} selected the {$position} with the {$pickOrdinal} overall pick, and in doing so, placed the future of their franchise on his shoulders. It is a weight few can carry, but the {$firstTeam['name']} believe they have found their cornerstone.",
+            "With the {$pickOrdinal} overall pick in the draft, the {$firstTeamName} selected {$position} {$playerName}, ending months of speculation and beginning what they hope will be a franchise-altering career. The crowd erupted. The commissioner shook his hand. And just like that, {$playerName} became the face of the {$firstTeam['name']}.",
+        ]);
+        $paragraphs[] = $this->pickOne([
+            "{$playerName} arrives with enormous expectations. The {$position} is expected to contribute immediately, bringing a combination of athleticism and instincts that scouts raved about throughout the pre-draft process. For a {$firstTeam['name']} franchise searching for a spark, he represents the brightest hope.",
+            "The selection of {$playerName} represents a clear vision from the {$firstTeam['name']} front office. They identified their biggest need, found the best player to fill it, and pulled the trigger without hesitation. {$playerName} is the kind of prospect teams build around.",
+        ]);
+        $paragraphs[] = $this->pickOne([
+            "\"This is a dream come true,\" {$playerName} will likely tell reporters. But the real work starts now. The transition from college to the pros is unforgiving, and the {$firstTeamName} will need {$playerName} to accelerate that development quickly if they want to turn the franchise around.",
+            "For {$playerName}, draft night is just the beginning. The celebrations will fade, the jersey will be fitted, and then comes the hard part: proving that the {$firstTeam['name']} made the right call. History is littered with top picks who never panned out, but it is also filled with those who became legends. Which category {$playerName} falls into remains to be written.",
+        ]);
+
+        $headline = $this->pickOne([
+            "Draft Day: {$firstTeamName} Select {$playerName} with the {$pickOrdinal} Overall Pick",
+            "{$playerName} Goes No. {$pickNum} Overall to the {$firstTeamName}",
+            "The {$firstTeam['name']}' Future Arrives: {$playerName} Selected {$pickOrdinal} Overall",
+        ]);
+
+        $body = implode("\n\n", $paragraphs);
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, 0, 'draft_coverage',
+            $headline, $body,
+            $columnist['name'], 'marcus_bell',
+            $firstTeam['id'], null,
+            $now,
+        ]);
+
+        // Article 2: Draft Winners and Losers (Dana Reeves — analytical)
+        $columnist = self::COLUMNISTS['dana_reeves'];
+        $teamPicks = [];
+        foreach ($picks as $pick) {
+            $tid = $pick['team_id'];
+            if (!isset($teamPicks[$tid])) $teamPicks[$tid] = [];
+            $teamPicks[$tid][] = $pick;
+        }
+
+        $paragraphs = [];
+        $paragraphs[] = "The draft is in the books, and now comes the fun part: grading the results. Some teams came away with exactly what they needed. Others left value on the board, reached for need over talent, or simply failed to address their most glaring holes. Here is an early look at the winners and losers.";
+
+        // Winners: teams with the most picks or first-round picks
+        $teamsByPicks = $teamPicks;
+        uasort($teamsByPicks, fn($a, $b) => count($b) - count($a));
+        $winnerTeams = array_slice($teamsByPicks, 0, 3, true);
+
+        $paragraphs[] = "**WINNERS**";
+        foreach ($winnerTeams as $tid => $tPicks) {
+            $team = $this->getTeam($tid);
+            $teamName = $team['city'] . ' ' . $team['name'];
+            $count = count($tPicks);
+            $firstRounders = array_filter($tPicks, fn($p) => ($p['round'] ?? 99) === 1);
+            $topPick = $tPicks[0];
+            $topName = $topPick['player_name'] ?? 'Unknown';
+            $topPos = $topPick['position'] ?? '';
+
+            $paragraphs[] = $this->pickOne([
+                "**{$teamName}** — With {$count} total selections, the {$team['name']} had the draft capital to reshape their roster, and they used it wisely. The addition of {$topPos} {$topName} gives them an immediate upgrade at a position of need. This class has a chance to accelerate the rebuild significantly.",
+                "**{$teamName}** — The {$team['name']} came into the draft with a clear plan and executed it. Landing {$topName} at {$topPos} was the headline, but the depth of this class is what will pay dividends down the road. {$count} new faces is a lot of fresh competition in training camp.",
+            ]);
+        }
+
+        // Losers: teams with fewest picks
+        $loserTeams = array_slice(array_reverse($teamsByPicks, true), 0, 2, true);
+        $paragraphs[] = "**LOSERS**";
+        foreach ($loserTeams as $tid => $tPicks) {
+            $team = $this->getTeam($tid);
+            $teamName = $team['city'] . ' ' . $team['name'];
+            $count = count($tPicks);
+
+            $paragraphs[] = $this->pickOne([
+                "**{$teamName}** — With only {$count} selection" . ($count !== 1 ? 's' : '') . ", the {$team['name']} simply did not have enough ammunition to address their roster holes. Whether they traded away picks earlier or not, the result is a thin draft class that puts pressure on free agency to fill the gaps.",
+                "**{$teamName}** — The {$team['name']} had limited draft capital and it showed. Just {$count} pick" . ($count !== 1 ? 's' : '') . " means this front office is banking on the current roster and free agent additions. That is a risky bet for a team with clear needs.",
+            ]);
+        }
+
+        $headline = "Draft Winners and Losers: Who Nailed It and Who Missed the Mark";
+        $body = implode("\n\n", $paragraphs);
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, 0, 'draft_coverage',
+            $headline, $body,
+            $columnist['name'], 'dana_reeves',
+            null, null,
+            $now,
+        ]);
+
+        // Article 3: Round-by-Round Breakdown (Terry Hollis)
+        $columnist = self::COLUMNISTS['terry_hollis'];
+        $paragraphs = [];
+        $paragraphs[] = "Every pick tells a story. Some teams solved problems. Others created new ones. Here is a round-by-round look at every selection in this year's draft.";
+
+        $rounds = [];
+        foreach ($picks as $pick) {
+            $r = $pick['round'] ?? 1;
+            if (!isset($rounds[$r])) $rounds[$r] = [];
+            $rounds[$r][] = $pick;
+        }
+        ksort($rounds);
+
+        foreach ($rounds as $roundNum => $roundPicks) {
+            $roundOrd = $this->ordinal($roundNum);
+            $lines = [];
+            foreach ($roundPicks as $pick) {
+                $team = $this->getTeam($pick['team_id']);
+                $abbr = $team['abbreviation'] ?? $team['name'] ?? '???';
+                $pName = $pick['player_name'] ?? 'Unknown';
+                $pPos = $pick['position'] ?? '';
+                $pickNum = $pick['pick'] ?? '?';
+                $lines[] = "Pick {$pickNum}: {$abbr} — {$pPos} {$pName}";
+            }
+            $paragraphs[] = "**Round {$roundNum}**\n" . implode("\n", $lines);
+        }
+
+        $paragraphs[] = $this->pickOne([
+            "When the dust settles, this draft class will be judged not by the names on the board today, but by the names that emerge on Sundays. Every pick is a projection, a gamble, a bet on potential. Time will tell which teams got it right.",
+            "Draft grades are a fool's errand in real time. The real evaluation begins when these young men strap on the pads and compete against the best players in the world. Ask me again in three years who won this draft.",
+        ]);
+
+        $headline = "Round-by-Round Draft Breakdown: Every Pick, Every Team";
+        $body = implode("\n\n", $paragraphs);
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, 0, 'draft_coverage',
+            $headline, $body,
+            $columnist['name'], 'terry_hollis',
+            null, null,
+            $now,
+        ]);
+    }
+
+    // ─── Trade Story ──────────────────────────────────────────────────
+
+    /**
+     * Generate an article when a trade is completed.
+     */
+    public function generateTradeStory(int $leagueId, int $seasonId, int $week, array $trade): void
+    {
+        $now = date('Y-m-d H:i:s');
+
+        $team1 = $this->getTeam($trade['team1_id']);
+        $team2 = $this->getTeam($trade['team2_id']);
+        $team1Name = $team1['city'] . ' ' . $team1['name'];
+        $team2Name = $team2['city'] . ' ' . $team2['name'];
+
+        $playersSent = $trade['players_sent'] ?? [];
+        $playersReceived = $trade['players_received'] ?? [];
+        $picksSent = $trade['picks_sent'] ?? [];
+        $picksReceived = $trade['picks_received'] ?? [];
+
+        // Identify the "headliner" — highest rated player in the trade
+        $allPlayers = array_merge($playersSent, $playersReceived);
+        $headliner = null;
+        $headlinerRating = 0;
+        $headlinerTeam = null;
+        foreach ($playersSent as $p) {
+            $rating = (int)($p['overall_rating'] ?? $p['overall'] ?? 0);
+            if ($rating > $headlinerRating) {
+                $headlinerRating = $rating;
+                $headliner = $p;
+                $headlinerTeam = $team2; // team2 receives players_sent
+            }
+        }
+        foreach ($playersReceived as $p) {
+            $rating = (int)($p['overall_rating'] ?? $p['overall'] ?? 0);
+            if ($rating > $headlinerRating) {
+                $headlinerRating = $rating;
+                $headliner = $p;
+                $headlinerTeam = $team1; // team1 receives players_received
+            }
+        }
+
+        // Determine drama level for columnist selection
+        $isBlockbuster = $headlinerRating >= 85 || (count($allPlayers) >= 3) || !empty($picksSent) || !empty($picksReceived);
+        if ($isBlockbuster) {
+            $columnist = self::COLUMNISTS['marcus_bell'];
+            $columnistKey = 'marcus_bell';
+        } else {
+            $columnist = self::COLUMNISTS['dana_reeves'];
+            $columnistKey = 'dana_reeves';
+        }
+
+        $headlinerName = $headliner ? (($headliner['first_name'] ?? '') . ' ' . ($headliner['last_name'] ?? '')) : 'players';
+        $headlinerPos = $headliner ? ($headliner['position'] ?? '') : '';
+        $receivingTeamName = $headlinerTeam ? ($headlinerTeam['city'] . ' ' . $headlinerTeam['name']) : $team1Name;
+        $sendingTeamName = $headlinerTeam === $team2 ? $team1Name : $team2Name;
+
+        // Build the trade details string
+        $sentNames = array_map(fn($p) => ($p['position'] ?? '') . ' ' . ($p['first_name'] ?? '') . ' ' . ($p['last_name'] ?? ''), $playersSent);
+        $receivedNames = array_map(fn($p) => ($p['position'] ?? '') . ' ' . ($p['first_name'] ?? '') . ' ' . ($p['last_name'] ?? ''), $playersReceived);
+        $sentPickDescs = array_map(fn($p) => ($p['round'] ?? '?') . '-round pick' . (isset($p['year']) ? " ({$p['year']})" : ''), $picksSent);
+        $receivedPickDescs = array_map(fn($p) => ($p['round'] ?? '?') . '-round pick' . (isset($p['year']) ? " ({$p['year']})" : ''), $picksReceived);
+
+        $team1Gets = array_merge($receivedNames, $receivedPickDescs);
+        $team2Gets = array_merge($sentNames, $sentPickDescs);
+
+        // Headline
+        if ($isBlockbuster && $headliner) {
+            $headline = $this->pickOne([
+                "Breaking: {$receivingTeamName} Acquire {$headlinerPos} {$headlinerName} from {$sendingTeamName} in Blockbuster Deal",
+                "TRADE: {$headlinerName} Headed to {$receivingTeamName} in Major Shakeup",
+                "Blockbuster: {$receivingTeamName} Land {$headlinerName} in Franchise-Altering Trade",
+            ]);
+        } else {
+            $headline = $this->pickOne([
+                "{$team1Name} and {$team2Name} Complete Trade",
+                "Trade Alert: {$team1Name} Acquire " . ($receivedNames[0] ?? 'New Pieces') . " from {$team2Name}",
+                "{$team1Name}, {$team2Name} Swap Assets in Deadline Deal",
+            ]);
+        }
+
+        $paragraphs = [];
+
+        // Paragraph 1: The news
+        $paragraphs[] = $this->pickOne([
+            "The {$team1Name} and {$team2Name} have agreed to a trade that sends shockwaves through the league. In the deal, {$team1Name} receive " . $this->joinList($team1Gets) . ", while {$team2Name} get " . $this->joinList($team2Gets) . " in return.",
+            "A major trade has been completed. The {$team1Name} have acquired " . $this->joinList($team1Gets) . " from the {$team2Name} in exchange for " . $this->joinList($team2Gets) . ". The deal reshapes both rosters heading into the stretch.",
+        ]);
+
+        // Paragraph 2: Impact on the receiving team
+        if ($headliner) {
+            $salary = $headliner['salary'] ?? $headliner['contract_salary'] ?? null;
+            $salaryStr = $salary ? ' (' . ($salary >= 1000000 ? '$' . number_format($salary / 1000000, 1) . 'M' : '$' . number_format($salary)) . ' salary)' : '';
+
+            $paragraphs[] = $this->pickOne([
+                "For the {$receivingTeamName}, this is a statement move. Adding {$headlinerName}{$salaryStr} gives them an immediate upgrade at {$headlinerPos} and signals that this front office believes the team is ready to compete right now. The {$headlinerRating}-overall rated {$headlinerPos} brings a level of talent that transforms the roster.",
+                "{$headlinerName} is the centerpiece of this deal, and for good reason. The {$headlinerRating}-overall rated {$headlinerPos}{$salaryStr} is the kind of player who can change the trajectory of a franchise. The {$receivingTeamName} are betting big on that talent, and the rest of the league should take notice.",
+            ]);
+        }
+
+        // Paragraph 3: Impact on the sending team
+        $paragraphs[] = $this->pickOne([
+            "On the other side, the {$sendingTeamName} are clearly looking toward the future. Parting with a talent like {$headlinerName} is never easy, but the return of " . $this->joinList($headlinerTeam === $team2 ? $team2Gets : $team1Gets) . " provides building blocks for the next chapter. Sometimes you have to take a step back to take two steps forward.",
+            "The {$sendingTeamName} made a calculated decision to move {$headlinerName} and stockpile assets. It is the kind of move that might not be popular with the fanbase today, but could look brilliant in hindsight. The pieces they received give them flexibility and youth, two currencies that appreciate over time.",
+        ]);
+
+        // Paragraph 4: League-wide impact
+        $paragraphs[] = $this->pickOne([
+            "Around the league, phones were buzzing as soon as news broke. This trade reshuffles the competitive landscape and could have ripple effects on other teams' plans. The balance of power may have just shifted, and rival front offices are recalculating their own moves accordingly.",
+            "Make no mistake: this trade changes the picture for both conferences. The {$receivingTeamName} just got significantly better, and opposing coaches are already adjusting their game plans. This is the kind of mid-season move that can define a franchise for years to come.",
+        ]);
+
+        $body = implode("\n\n", $paragraphs);
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, $week, 'trade_story',
+            $headline, $body,
+            $columnist['name'], $columnistKey,
+            $headlinerTeam['id'] ?? $team1['id'], null,
+            $now,
+        ]);
+
+        // Ticker item
+        $tickerText = "TRADE: {$receivingTeamName} acquire {$headlinerName} from {$sendingTeamName}";
+        $stmt = $this->db->prepare(
+            "INSERT INTO ticker_items (league_id, text, type, team_id, week, created_at) VALUES (?, ?, 'trade', ?, ?, ?)"
+        );
+        $stmt->execute([$leagueId, $tickerText, $headlinerTeam['id'] ?? $team1['id'], $week, $now]);
+    }
+
+    // ─── Free Agent Signing Story ─────────────────────────────────────
+
+    /**
+     * Generate an article when a significant free agent signs.
+     */
+    public function generateSigningStory(int $leagueId, int $seasonId, int $week, array $signing): void
+    {
+        $overallRating = (int)($signing['overall_rating'] ?? 0);
+        $salary = (int)($signing['salary'] ?? 0);
+
+        // Only generate for significant signings
+        if ($overallRating < 75 && $salary < 5000000) {
+            return;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $team = $this->getTeam($signing['team_id']);
+        $teamName = $team['city'] . ' ' . $team['name'];
+        $playerName = $signing['player_name'] ?? 'Unknown';
+        $position = $signing['position'] ?? '';
+        $years = (int)($signing['years'] ?? 1);
+        $salaryStr = $salary >= 1000000 ? '$' . number_format($salary / 1000000, 1) . 'M' : '$' . number_format($salary);
+        $totalStr = $salary * $years >= 1000000 ? '$' . number_format(($salary * $years) / 1000000, 1) . 'M' : '$' . number_format($salary * $years);
+
+        // Higher rated = more drama
+        if ($overallRating >= 85) {
+            $columnist = self::COLUMNISTS['marcus_bell'];
+            $columnistKey = 'marcus_bell';
+        } elseif ($overallRating >= 80) {
+            $columnist = self::COLUMNISTS['dana_reeves'];
+            $columnistKey = 'dana_reeves';
+        } else {
+            $columnist = self::COLUMNISTS['terry_hollis'];
+            $columnistKey = 'terry_hollis';
+        }
+
+        $headline = $this->pickOne([
+            "{$teamName} Sign {$position} {$playerName} to {$years}-Year, {$totalStr} Deal",
+            "Free Agency: {$playerName} Joins the {$team['name']} on {$years}-Year Contract",
+            "SIGNING: {$teamName} Land {$playerName} in Free Agent Splash",
+        ]);
+
+        $paragraphs = [];
+
+        // Paragraph 1: The news
+        $paragraphs[] = $this->pickOne([
+            "The {$teamName} have made a significant addition to their roster, signing {$position} {$playerName} to a {$years}-year deal worth {$totalStr} ({$salaryStr} per year). The move immediately upgrades the {$team['name']}' depth chart at a position that was identified as a priority this offseason.",
+            "Free agency has delivered a blockbuster. The {$teamName} have landed {$position} {$playerName}, inking the {$overallRating}-overall rated veteran to a {$years}-year, {$totalStr} contract. It is the kind of signing that changes the perception of a franchise overnight.",
+        ]);
+
+        // Paragraph 2: Player profile
+        $paragraphs[] = $this->pickOne([
+            "{$playerName} brings an {$overallRating}-overall rating and a proven track record of production. At {$position}, he fills a glaring need for a {$team['name']} team that was searching for an upgrade at the position. His combination of experience and talent makes this signing a potential game-changer.",
+            "What the {$teamName} are getting in {$playerName} is a {$overallRating}-overall rated {$position} who has consistently performed at a high level. He is the type of player who elevates everyone around him, and his presence in the locker room will be felt just as much as his impact on the field.",
+        ]);
+
+        // Paragraph 3: Cap impact and team fit
+        $paragraphs[] = $this->pickOne([
+            "The financial commitment is significant — {$salaryStr} annually over {$years} years — but the {$team['name']} clearly view this as an investment in winning now. The cap implications will need to be managed carefully, but when a player of {$playerName}'s caliber hits the market, you find a way to make the numbers work.",
+            "At {$salaryStr} per season, {$playerName} is not cheap, but the {$teamName} are betting that the production will justify the price tag. With {$years} years on the deal, both sides have a window to accomplish something special together. The {$team['name']} have signaled their intentions: this is a team that expects to compete.",
+        ]);
+
+        // Paragraph 4: Context
+        $record = ($team['wins'] ?? 0) . '-' . ($team['losses'] ?? 0);
+        $paragraphs[] = $this->pickOne([
+            "For a {$team['name']} team sitting at {$record}, this signing represents a commitment to improving the roster in real time. The front office is not content to wait, and the addition of {$playerName} should pay immediate dividends. The rest of the league has been put on notice.",
+            "The {$teamName} ({$record}) needed a boost, and {$playerName} provides exactly that. Whether this is the move that pushes them over the top or simply one piece of a larger puzzle remains to be seen, but there is no denying the talent and intent behind this signing.",
+        ]);
+
+        $body = implode("\n\n", $paragraphs);
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, $week, 'free_agency',
+            $headline, $body,
+            $columnist['name'], $columnistKey,
+            $team['id'], null,
+            $now,
+        ]);
+
+        // Ticker item
+        $tickerText = "SIGNING: {$team['abbreviation']} sign {$position} {$playerName} ({$years}yr/{$totalStr})";
+        $stmt = $this->db->prepare(
+            "INSERT INTO ticker_items (league_id, text, type, team_id, week, created_at) VALUES (?, ?, 'signing', ?, ?, ?)"
+        );
+        $stmt->execute([$leagueId, $tickerText, $team['id'], $week, $now]);
+    }
+
+    // ─── Awards Coverage ──────────────────────────────────────────────
+
+    /**
+     * Generate a combined awards article after season awards are determined.
+     */
+    public function generateAwardsCoverage(int $leagueId, int $seasonId, array $awards): void
+    {
+        if (empty($awards)) return;
+
+        $now = date('Y-m-d H:i:s');
+
+        // Find MVP for headline
+        $mvp = null;
+        foreach ($awards as $award) {
+            if (strtoupper($award['award'] ?? '') === 'MVP') {
+                $mvp = $award;
+                break;
+            }
+        }
+        $headlinePlayer = $mvp ? $mvp['player_name'] : ($awards[0]['player_name'] ?? 'Top Players');
+
+        $headline = $this->pickOne([
+            "Season Awards: {$headlinePlayer} Named MVP",
+            "{$headlinePlayer} Takes Home MVP Honors as Season Awards Announced",
+            "Awards Night: {$headlinePlayer} Headlines a Star-Studded Class",
+        ]);
+
+        $paragraphs = [];
+
+        // Paragraph 1: Intro
+        $paragraphs[] = "The ballots are in, the votes have been counted, and the league's best have been recognized. From the Most Valuable Player to the top rookies, this season's award winners represent the very best of what football has to offer. Here is a look at every major award and the players who earned them.";
+
+        // Group awards by type for columnist assignment
+        $awardOrder = ['MVP', 'OPOY', 'DPOY', 'OROY', 'DROY', 'Coach of the Year'];
+        $presentedAwards = [];
+        foreach ($awardOrder as $awardName) {
+            foreach ($awards as $award) {
+                if (strtoupper($award['award'] ?? '') === strtoupper($awardName)) {
+                    $presentedAwards[] = $award;
+                    break;
+                }
+            }
+        }
+        // Add any remaining awards not in the standard order
+        foreach ($awards as $award) {
+            $found = false;
+            foreach ($presentedAwards as $pa) {
+                if (($pa['award'] ?? '') === ($award['award'] ?? '') && ($pa['player_id'] ?? 0) === ($award['player_id'] ?? 0)) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) $presentedAwards[] = $award;
+        }
+
+        foreach ($presentedAwards as $idx => $award) {
+            $awardName = $award['award'] ?? 'Award';
+            $playerName = $award['player_name'] ?? 'Unknown';
+            $teamId = $award['team_id'] ?? null;
+            $stats = $award['stats'] ?? [];
+            $team = $teamId ? $this->getTeam($teamId) : [];
+            $teamName = !empty($team) ? ($team['city'] . ' ' . $team['name']) : 'his team';
+            $teamShort = !empty($team) ? $team['name'] : 'his team';
+
+            // Rotate columnists: MVP/OPOY = Marcus Bell, DPOY = Terry Hollis, Rookies = Dana Reeves, others rotate
+            $awardUpper = strtoupper($awardName);
+            if (in_array($awardUpper, ['MVP', 'OPOY'])) {
+                $voice = 'marcus_bell';
+            } elseif (in_array($awardUpper, ['DPOY', 'COACH OF THE YEAR'])) {
+                $voice = 'terry_hollis';
+            } else {
+                $voice = 'dana_reeves';
+            }
+
+            $statLine = $this->formatAwardStats($stats);
+
+            if ($awardUpper === 'MVP') {
+                $paragraphs[] = $this->pickOne([
+                    "**Most Valuable Player: {$playerName}, {$teamName}**\n\nThere was no debate. {$playerName} was the engine that drove the {$teamShort} all season long{$statLine}. When the games mattered most, {$playerName} elevated. When the pressure was at its peak, {$playerName} delivered. This is the kind of season that defines a career, the kind of year players dream about when they first pick up a football. {$playerName} did not just win the MVP — he earned it in a way that left no room for argument.",
+                    "**Most Valuable Player: {$playerName}, {$teamName}**\n\n{$playerName} was the most dominant player in the league this season, and it was not particularly close{$statLine}. From Week 1 through the final snap, {$playerName} was the standard by which all other players were measured. The {$teamShort} were a different team with {$playerName} on the field, and the MVP award is a well-deserved recognition of a truly special season.",
+                ]);
+            } elseif ($awardUpper === 'OPOY') {
+                $paragraphs[] = $this->pickOne([
+                    "**Offensive Player of the Year: {$playerName}, {$teamName}**\n\n{$playerName} put together one of the most productive offensive seasons in recent memory{$statLine}. Week after week, {$playerName} was the most dangerous weapon on the field. Defenses game-planned around stopping him, and week after week, they failed.",
+                    "**Offensive Player of the Year: {$playerName}, {$teamName}**\n\nThe numbers speak for themselves{$statLine}. {$playerName} was simply unstoppable this season, posting the kind of production that redefines what is possible at the position. The {$teamShort} built their offense around {$playerName}, and the results were extraordinary.",
+                ]);
+            } elseif ($awardUpper === 'DPOY') {
+                $paragraphs[] = $this->pickOne([
+                    "**Defensive Player of the Year: {$playerName}, {$teamName}**\n\n{$playerName} was a one-man wrecking crew{$statLine}. Opposing offenses built their game plans around avoiding {$playerName}, and even that was often not enough. This is old-school, imposing-your-will football, and nobody did it better this season.",
+                    "**Defensive Player of the Year: {$playerName}, {$teamName}**\n\nFear. That is what {$playerName} instilled in opposing offenses{$statLine}. The {$teamShort} defense was anchored by {$playerName}'s relentless effort and game-changing ability. Quarterbacks saw him in their nightmares. Running backs looked for him before the snap. That is the ultimate compliment for a defender.",
+                ]);
+            } elseif ($awardUpper === 'OROY') {
+                $paragraphs[] = $this->pickOne([
+                    "**Offensive Rookie of the Year: {$playerName}, {$teamName}**\n\nThe transition from college to the pros can humble even the most talented prospects. Not {$playerName}{$statLine}. From his very first snap, {$playerName} played with a poise and confidence that belied his age. The {$teamShort} found a special one, and the best is almost certainly yet to come.",
+                    "**Offensive Rookie of the Year: {$playerName}, {$teamName}**\n\n{$playerName} made the leap look easy{$statLine}. Rookie walls, learning curves, the speed of the game — none of it fazed him. The {$teamShort} have a building block for the next decade, and this award is just the beginning of what figures to be a remarkable career.",
+                ]);
+            } elseif ($awardUpper === 'DROY') {
+                $paragraphs[] = $this->pickOne([
+                    "**Defensive Rookie of the Year: {$playerName}, {$teamName}**\n\n{$playerName} played like a veteran from day one{$statLine}. The {$teamShort} asked him to contribute immediately, and he exceeded every expectation. For a rookie to make this kind of impact on the defensive side of the ball is rare. The future is bright.",
+                    "**Defensive Rookie of the Year: {$playerName}, {$teamName}**\n\nRookies are not supposed to play like this{$statLine}. {$playerName} was a disruptive force from the moment he stepped on the field, earning the respect of veterans and opponents alike. The {$teamShort} struck gold on draft day.",
+                ]);
+            } elseif ($awardUpper === 'COACH OF THE YEAR') {
+                $record = !empty($team) ? ($team['wins'] ?? 0) . '-' . ($team['losses'] ?? 0) : '';
+                $paragraphs[] = $this->pickOne([
+                    "**Coach of the Year: {$playerName}, {$teamName}**\n\nThe {$teamShort} had no business being as good as they were, and that is a testament to {$playerName}'s coaching. A {$record} record was earned through superior preparation, in-game adjustments, and the ability to get the most out of every player on the roster. This award belongs to the entire coaching staff, but it starts at the top.",
+                    "**Coach of the Year: {$playerName}, {$teamName}**\n\n{$playerName} guided the {$teamShort} to a {$record} record through masterful game-planning and a locker room culture built on accountability. When the talent said one thing and the results said another, it was clear: coaching made the difference. This team overachieved, and {$playerName} is the reason why.",
+                ]);
+            } else {
+                $paragraphs[] = "**{$awardName}: {$playerName}, {$teamName}**\n\n{$playerName} earned the {$awardName} through a season of consistent, high-level play{$statLine}. The {$teamShort} leaned on {$playerName} heavily this season, and time and again, the response was excellence.";
+            }
+        }
+
+        // Closing paragraph
+        $paragraphs[] = "Congratulations to all of this season's award winners. Their performances set the standard for the league and provided the kind of moments that make football the greatest game on earth.";
+
+        $body = implode("\n\n", $paragraphs);
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, 0, 'awards',
+            $headline, $body,
+            'Dana Reeves', 'dana_reeves',
+            null, null,
+            $now,
+        ]);
+
+        // Ticker for MVP
+        if ($mvp) {
+            $mvpTeam = $mvp['team_id'] ? $this->getTeam($mvp['team_id']) : [];
+            $abbr = $mvpTeam['abbreviation'] ?? '';
+            $tickerText = "AWARDS: {$mvp['player_name']}" . ($abbr ? " ({$abbr})" : '') . " named league MVP";
+            $stmt = $this->db->prepare(
+                "INSERT INTO ticker_items (league_id, text, type, team_id, week, created_at) VALUES (?, ?, 'award', ?, ?, ?)"
+            );
+            $stmt->execute([$leagueId, $tickerText, $mvp['team_id'] ?? null, 0, $now]);
+        }
+    }
+
+    /**
+     * Format award stats into a readable string.
+     */
+    private function formatAwardStats(array $stats): string
+    {
+        if (empty($stats)) return '';
+
+        $parts = [];
+        if (isset($stats['pass_yards'])) $parts[] = number_format($stats['pass_yards']) . ' passing yards';
+        if (isset($stats['pass_tds'])) $parts[] = $stats['pass_tds'] . ' touchdown passes';
+        if (isset($stats['rush_yards'])) $parts[] = number_format($stats['rush_yards']) . ' rushing yards';
+        if (isset($stats['rush_tds'])) $parts[] = $stats['rush_tds'] . ' rushing touchdowns';
+        if (isset($stats['receptions'])) $parts[] = $stats['receptions'] . ' receptions';
+        if (isset($stats['rec_yards'])) $parts[] = number_format($stats['rec_yards']) . ' receiving yards';
+        if (isset($stats['rec_tds'])) $parts[] = $stats['rec_tds'] . ' receiving touchdowns';
+        if (isset($stats['sacks'])) $parts[] = $stats['sacks'] . ' sacks';
+        if (isset($stats['interceptions_def'])) $parts[] = $stats['interceptions_def'] . ' interceptions';
+        if (isset($stats['tackles'])) $parts[] = $stats['tackles'] . ' tackles';
+        if (isset($stats['forced_fumbles'])) $parts[] = $stats['forced_fumbles'] . ' forced fumbles';
+
+        if (empty($parts)) return '';
+        return ', posting ' . $this->joinList($parts);
+    }
+
+    // ─── Milestone Article ────────────────────────────────────────────
+
+    /**
+     * Generate an article for milestone events (clinch, elimination, streaks, career milestones).
+     */
+    public function generateMilestoneArticle(int $leagueId, int $seasonId, int $week, array $milestone): void
+    {
+        $now = date('Y-m-d H:i:s');
+        $type = $milestone['type'] ?? '';
+        $teamId = $milestone['team_id'] ?? null;
+        $details = $milestone['details'] ?? '';
+        $team = $teamId ? $this->getTeam($teamId) : [];
+        $teamName = !empty($team) ? ($team['city'] . ' ' . $team['name']) : 'Unknown Team';
+        $teamShort = !empty($team) ? $team['name'] : 'Unknown';
+        $record = !empty($team) ? (($team['wins'] ?? 0) . '-' . ($team['losses'] ?? 0)) : '';
+
+        $headline = '';
+        $paragraphs = [];
+        $columnist = self::COLUMNISTS['terry_hollis'];
+        $columnistKey = 'terry_hollis';
+
+        switch ($type) {
+            case 'clinch_playoff':
+                $columnist = self::COLUMNISTS['marcus_bell'];
+                $columnistKey = 'marcus_bell';
+
+                $headline = $this->pickOne([
+                    "{$teamName} Clinch Playoff Berth",
+                    "Postseason Bound: {$teamName} Punch Their Ticket",
+                    "{$teamName} Lock Up Playoff Spot at {$record}",
+                ]);
+
+                $paragraphs[] = $this->pickOne([
+                    "Pop the champagne. The {$teamName} have officially clinched a playoff berth, and the celebration in the locker room was well-earned. At {$record}, the {$teamShort} have punched their ticket to the postseason, validating a season of hard work and commitment to a winning culture.",
+                    "The magic number hit zero, and the {$teamName} are playoff-bound. With a {$record} record, the {$teamShort} have secured their place in the postseason field, and now the real fun begins. This is a team that has been building toward this moment all season, and the satisfaction of hearing the playoff clinch announced was palpable.",
+                ]);
+                $paragraphs[] = $this->pickOne([
+                    "For a franchise that has invested heavily in building a contender, this is validation. The {$teamShort} set out at the start of the season with postseason aspirations, and they have delivered. But make no mistake — clinching a spot is not the goal. It is just the beginning.",
+                    "The {$teamShort} have not just clinched — they have earned it. Every win, every fourth-quarter stand, every gut-check game led to this moment. The players will savor tonight, but tomorrow the focus shifts to seeding, to home-field advantage, and to the ultimate prize.",
+                ]);
+                $paragraphs[] = "The question now is not whether the {$teamShort} will be in the playoffs, but how far they can go. " . ($details ?: "With the way this team has been playing, anything feels possible.");
+                break;
+
+            case 'eliminated':
+                $columnist = self::COLUMNISTS['terry_hollis'];
+                $columnistKey = 'terry_hollis';
+
+                $headline = $this->pickOne([
+                    "{$teamName}'s Season Effectively Over After Week {$week} Loss",
+                    "Eliminated: {$teamName} Officially Out of Playoff Contention",
+                    "Fade to Black: {$teamName}'s Postseason Hopes Dashed",
+                ]);
+
+                $paragraphs[] = $this->pickOne([
+                    "The mathematical possibility may linger, but the reality is clear: the {$teamName}'s season is over. At {$record} through Week {$week}, the {$teamShort} have been eliminated from playoff contention, and an offseason of soul-searching begins now.",
+                    "It is over for the {$teamName}. With a {$record} record and no path to the postseason, the {$teamShort} will be watching the playoffs from home. It is a bitter pill for a franchise that had higher expectations coming into the year.",
+                ]);
+                $paragraphs[] = $this->pickOne([
+                    "There will be difficult conversations in the coming weeks. Roster evaluations, coaching assessments, draft positioning — the focus shifts from winning games to building for the future. The remaining games become about individual evaluation and developing young players.",
+                    "The {$teamShort} now play for pride and for jobs. Every remaining snap is an audition, every game film a piece of evidence in the offseason evaluation. Some players are playing for their futures with this franchise. Others are playing for their next opportunity elsewhere.",
+                ]);
+                $paragraphs[] = "The fans deserve better, and the front office knows it. " . ($details ?: "Changes are coming. The only question is how sweeping those changes will be.");
+                break;
+
+            case 'win_streak':
+                // Extract streak number from details
+                preg_match('/(\d+)/', $details, $streakMatch);
+                $streakNum = $streakMatch[1] ?? '5';
+
+                if ((int)$streakNum < 5) return; // Only write about streaks of 5+
+
+                $columnist = self::COLUMNISTS['marcus_bell'];
+                $columnistKey = 'marcus_bell';
+
+                $headline = $this->pickOne([
+                    "{$teamName} Riding Red-Hot {$streakNum}-Game Win Streak",
+                    "On Fire: {$teamName} Extend Win Streak to {$streakNum}",
+                    "Nobody Can Stop the {$teamShort}: Win Streak Hits {$streakNum}",
+                ]);
+
+                $paragraphs[] = $this->pickOne([
+                    "The {$teamName} cannot be stopped right now. Winners of {$streakNum} straight, the {$teamShort} have transformed from a good team into the hottest team in the league. This is the kind of run that changes the entire complexion of a season.",
+                    "{$streakNum} in a row. Let that sink in. The {$teamName} have rattled off {$streakNum} consecutive victories, and each win seems more convincing than the last. This team has found something — a rhythm, a swagger, a belief — and opponents are running out of answers.",
+                ]);
+                $paragraphs[] = $this->pickOne([
+                    "What makes this streak remarkable is not just the wins, but how the {$teamShort} are winning. Close games, blowouts, come-from-behind victories — they have done it all. This is a team that finds a way regardless of circumstance, and that adaptability is the hallmark of a genuine contender.",
+                    "During this {$streakNum}-game tear, the {$teamShort} have shown the kind of resilience and depth that championship teams are made of. The offense is clicking, the defense is swarming, and the confidence is through the roof. When a team is playing like this, it is best to simply get out of the way.",
+                ]);
+                $paragraphs[] = "The rest of the league is on notice. The {$teamName} are coming, and right now, they look like the team to beat. " . ($details ?: '');
+                break;
+
+            case 'loss_streak':
+                preg_match('/(\d+)/', $details, $streakMatch);
+                $streakNum = $streakMatch[1] ?? '5';
+
+                if ((int)$streakNum < 5) return;
+
+                $columnist = self::COLUMNISTS['terry_hollis'];
+                $columnistKey = 'terry_hollis';
+
+                $headline = $this->pickOne([
+                    "{$teamName} in Freefall: Losing Streak Hits {$streakNum}",
+                    "Rock Bottom? {$teamName} Drop {$streakNum}th Straight",
+                    "Crisis in {$team['city']}: {$teamShort} Lose {$streakNum} in a Row",
+                ]);
+
+                $paragraphs[] = $this->pickOne([
+                    "{$streakNum} straight losses. There is no sugar-coating it, no silver lining to find, no moral victories to celebrate. The {$teamName} are in crisis, and the losing streak has exposed fundamental problems that go beyond any single game.",
+                    "The {$teamName} have now lost {$streakNum} consecutive games, and the freefall shows no signs of stopping. What started as a rough patch has become a full-blown crisis, and the patience of everyone — from the front office to the fans — is being tested.",
+                ]);
+                $paragraphs[] = $this->pickOne([
+                    "During this stretch, the {$teamShort} have been outscored, outcoached, and outcompeted. The issues are systemic. The offense cannot sustain drives. The defense cannot get off the field. Special teams have been a liability. When everything is broken, where do you even start fixing it?",
+                    "The film from these {$streakNum} losses paints a damning picture. Missed assignments, mental errors, a lack of effort on critical plays — these are not the marks of a well-coached, disciplined football team. Something has to change, and it has to change immediately.",
+                ]);
+                $paragraphs[] = "Questions about the coaching staff, the roster construction, and the direction of this franchise are no longer premature. They are overdue. " . ($details ?: "The {$teamShort} need answers, and they need them fast.");
+                break;
+
+            case 'career_milestone':
+                $columnist = self::COLUMNISTS['marcus_bell'];
+                $columnistKey = 'marcus_bell';
+
+                $headline = $details ?: "{$teamName} Player Reaches Career Milestone";
+
+                $paragraphs[] = $this->pickOne([
+                    "History was made. {$details} It is the kind of achievement that puts a career in perspective, a number so staggering that it demands we stop and appreciate what we have witnessed. Milestones like this do not happen by accident. They are the product of years of dedication, sacrifice, and an unwavering commitment to excellence.",
+                    "{$details} In a league defined by turnover and short careers, reaching a milestone of this magnitude is a testament to sustained greatness. The kind of longevity and consistency required to achieve this number separates the good from the legendary.",
+                ]);
+                $paragraphs[] = $this->pickOne([
+                    "Teammates and opponents alike tipped their caps. This is the kind of accomplishment that transcends team loyalty and rivalry. When a player reaches this level, the entire football community pauses to acknowledge greatness.",
+                    "The celebration on the sideline told the story. Teammates mobbed the milestone achiever, coaches smiled ear to ear, and the crowd rose for a standing ovation. These are the moments that make sports special — the intersection of personal achievement and collective joy.",
+                ]);
+                $paragraphs[] = "When the career is over and the numbers are tallied, this milestone will stand as one of the defining moments. Football immortality is earned one play, one game, one season at a time, and today, another chapter was written.";
+                break;
+
+            default:
+                return; // Unknown milestone type, skip
+        }
+
+        if (empty($headline) || empty($paragraphs)) return;
+
+        $body = implode("\n\n", $paragraphs);
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, $week, 'milestone',
+            $headline, $body,
+            $columnist['name'], $columnistKey,
+            $teamId, null,
+            $now,
+        ]);
+
+        // Ticker item
+        $tickerText = match ($type) {
+            'clinch_playoff' => "CLINCHED: {$team['abbreviation']} secure playoff berth at {$record}",
+            'eliminated' => "ELIMINATED: {$team['abbreviation']} out of playoff contention",
+            'win_streak' => "STREAK: {$team['abbreviation']} have won {$streakNum} straight",
+            'loss_streak' => "SKID: {$team['abbreviation']} have lost {$streakNum} straight",
+            'career_milestone' => $details ?: "MILESTONE: {$team['abbreviation']} player reaches career milestone",
+            default => '',
+        };
+
+        if ($tickerText) {
+            $stmt = $this->db->prepare(
+                "INSERT INTO ticker_items (league_id, text, type, team_id, week, created_at) VALUES (?, ?, 'milestone', ?, ?, ?)"
+            );
+            $stmt->execute([$leagueId, $tickerText, $teamId, $week, $now]);
+        }
+    }
+
+    // ─── Ordinal Helper ───────────────────────────────────────────────
+
+    /**
+     * Convert a number to its ordinal string (1st, 2nd, 3rd, etc.)
+     */
+    private function ordinal(int $n): string
+    {
+        $s = ['th', 'st', 'nd', 'rd'];
+        $v = $n % 100;
+        return $n . ($s[($v - 20) % 10] ?? $s[$v] ?? $s[0]);
+    }
 }

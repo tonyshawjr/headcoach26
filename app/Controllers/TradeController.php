@@ -136,6 +136,7 @@ class TradeController
             if ($preAgreed) {
                 $this->db->prepare("UPDATE trades SET status = 'accepted' WHERE id = ?")->execute([$tradeId]);
                 $this->tradeEngine->executeTrade($tradeId);
+                $this->generateTradeNarrative($auth['league_id'], $tradeId);
                 $trade['status'] = 'completed';
                 $trade['message'] = 'Trade complete! Players have been swapped.';
             } else {
@@ -147,6 +148,7 @@ class TradeController
                 if ($decision === 'accepted') {
                     $this->db->prepare("UPDATE trades SET status = 'accepted' WHERE id = ?")->execute([$tradeId]);
                     $this->tradeEngine->executeTrade($tradeId);
+                    $this->generateTradeNarrative($auth['league_id'], $tradeId);
                     $trade['status'] = 'completed';
                     $trade['message'] = 'Trade accepted! Players have been swapped.';
                     $trade['reason'] = $reason;
@@ -431,5 +433,76 @@ class TradeController
         }
 
         Response::success('Player removed from trade block');
+    }
+
+    /**
+     * Generate narrative coverage for a completed trade.
+     * Non-critical — failures are logged but do not break trade flow.
+     */
+    private function generateTradeNarrative(int $leagueId, int $tradeId): void
+    {
+        if (!class_exists('App\\Services\\NarrativeEngine')) {
+            return;
+        }
+
+        try {
+            // Fetch trade details
+            $tradeStmt = $this->db->prepare("SELECT * FROM trades WHERE id = ?");
+            $tradeStmt->execute([$tradeId]);
+            $trade = $tradeStmt->fetch();
+            if (!$trade) return;
+
+            // Fetch trade items
+            $itemStmt = $this->db->prepare("SELECT * FROM trade_items WHERE trade_id = ?");
+            $itemStmt->execute([$tradeId]);
+            $items = $itemStmt->fetchAll();
+
+            $playersSent = [];
+            $playersReceived = [];
+            $picksSent = [];
+            $picksReceived = [];
+
+            foreach ($items as $item) {
+                if ($item['item_type'] === 'player' && $item['player_id']) {
+                    if ($item['direction'] === 'outgoing') {
+                        $playersSent[] = (int) $item['player_id'];
+                    } else {
+                        $playersReceived[] = (int) $item['player_id'];
+                    }
+                }
+                if ($item['item_type'] === 'draft_pick' && $item['draft_pick_id']) {
+                    if ($item['direction'] === 'outgoing') {
+                        $picksSent[] = (int) $item['draft_pick_id'];
+                    } else {
+                        $picksReceived[] = (int) $item['draft_pick_id'];
+                    }
+                }
+            }
+
+            // Get current week and season
+            $leagueStmt = $this->db->prepare("SELECT current_week FROM leagues WHERE id = ?");
+            $leagueStmt->execute([$leagueId]);
+            $leagueRow = $leagueStmt->fetch();
+            $week = $leagueRow ? (int) $leagueRow['current_week'] : 0;
+
+            $leagueModel = new \App\Models\League();
+            $season = $leagueModel->getCurrentSeason($leagueId);
+            $seasonId = $season ? (int) $season['id'] : 0;
+
+            $tradeData = [
+                'trade_id' => $tradeId,
+                'team1_id' => (int) $trade['proposing_team_id'],
+                'team2_id' => (int) $trade['receiving_team_id'],
+                'players_sent' => $playersSent,
+                'players_received' => $playersReceived,
+                'picks_sent' => $picksSent,
+                'picks_received' => $picksReceived,
+            ];
+
+            $engine = new \App\Services\NarrativeEngine();
+            $engine->generateTradeStory($leagueId, $seasonId, $week, $tradeData);
+        } catch (\Throwable $e) {
+            error_log("NarrativeEngine trade story error: " . $e->getMessage());
+        }
     }
 }

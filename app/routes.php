@@ -114,6 +114,7 @@ $router->get('/leagues/{league_id}/records', [StandingsController::class, 'recor
 $router->get('/leagues/{league_id}/scenarios', [StandingsController::class, 'scenarios']);
 $router->get('/leagues/{league_id}/history', [StandingsController::class, 'history']);
 $router->get('/achievements', [StandingsController::class, 'achievements']);
+$router->get('/standings/award-history', [StandingsController::class, 'awardHistory']);
 
 // Press Conference
 $router->get('/press-conference/current', [PressConferenceController::class, 'current']);

@@ -176,6 +176,21 @@ class PlayoffEngine
 
         $this->insertGames($games);
 
+        // Generate playoff preview narrative
+        if (!empty($games) && class_exists('App\\Services\\NarrativeEngine')) {
+            try {
+                $matchups = array_map(fn($g) => [
+                    'home_team_id' => $g['home_team_id'],
+                    'away_team_id' => $g['away_team_id'],
+                    'game_type' => $g['game_type'],
+                ], $games);
+                $narrativeEngine = new NarrativeEngine();
+                $narrativeEngine->generatePlayoffPreview($leagueId, $seasonId, $firstPlayoffWeek, $matchups);
+            } catch (\Throwable $e) {
+                error_log("NarrativeEngine playoff preview error: " . $e->getMessage());
+            }
+        }
+
         return $this->getPlayoffBracket($leagueId);
     }
 
@@ -249,6 +264,21 @@ class PlayoffEngine
         }
 
         $this->insertGames($games);
+
+        // Generate playoff preview narrative for the next round
+        if (!empty($games) && class_exists('App\\Services\\NarrativeEngine')) {
+            try {
+                $matchups = array_map(fn($g) => [
+                    'home_team_id' => $g['home_team_id'],
+                    'away_team_id' => $g['away_team_id'],
+                    'game_type' => $g['game_type'],
+                ], $games);
+                $narrativeEngine = new NarrativeEngine();
+                $narrativeEngine->generatePlayoffPreview($leagueId, $seasonId, $nextWeek, $matchups);
+            } catch (\Throwable $e) {
+                error_log("NarrativeEngine playoff preview error: " . $e->getMessage());
+            }
+        }
 
         return $this->getPlayoffBracket($leagueId);
     }
@@ -699,6 +729,21 @@ class PlayoffEngine
         ];
 
         $this->insertGames($games);
+
+        // Generate playoff preview narrative for the Big Game
+        if (class_exists('App\\Services\\NarrativeEngine')) {
+            try {
+                $matchups = [[
+                    'home_team_id' => (int)$champs[0]['id'],
+                    'away_team_id' => (int)$champs[1]['id'],
+                    'game_type' => 'big_game',
+                ]];
+                $narrativeEngine = new NarrativeEngine();
+                $narrativeEngine->generatePlayoffPreview($leagueId, $seasonId, $week, $matchups);
+            } catch (\Throwable $e) {
+                error_log("NarrativeEngine Big Game preview error: " . $e->getMessage());
+            }
+        }
 
         return $this->getPlayoffBracket($leagueId);
     }
