@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { franchiseApi, rosterImportApi } from '@/api/client';
 import type { SetupTeam } from '@/api/client';
 import { toast } from 'sonner';
@@ -417,7 +417,7 @@ export default function FranchiseSetup() {
                         <div className="grid grid-cols-2 gap-1.5">
                           {divTeams.map((t) => (
                             <div key={t.abbreviation} className="flex items-center gap-2 rounded-md bg-[var(--bg-primary)] p-2">
-                              <TeamBadge abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="sm" />
+                              <TeamLogo abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="sm" />
                               <p className="truncate text-xs font-medium">{t.city} {t.name}</p>
                             </div>
                           ))}
@@ -479,7 +479,7 @@ export default function FranchiseSetup() {
                                   : 'border-white/5 bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)]/80 hover:border-white/10'
                               }`}
                             >
-                              <TeamBadge abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="sm" />
+                              <TeamLogo abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="sm" />
                               <div className="min-w-0 flex-1">
                                 <p className={`truncate text-sm font-medium ${isSelected ? 'text-[var(--accent-blue)]' : ''}`}>
                                   {t.city}
@@ -518,7 +518,7 @@ export default function FranchiseSetup() {
             return (
               <div className="mt-6 rounded-lg border border-[var(--accent-blue)]/20 bg-[var(--accent-blue)]/5 p-4">
                 <div className="flex items-center gap-4">
-                  <TeamBadge abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="lg" />
+                  <TeamLogo abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="lg" />
                   <div>
                     <p className="font-display text-xl">{t.city} {t.name}</p>
                     <p className="text-sm text-[var(--text-secondary)]">{teamConf} — {teamDiv}</p>

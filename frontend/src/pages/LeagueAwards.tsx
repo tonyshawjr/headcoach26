@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Trophy, Star, Shield, Award, Crown, Users } from 'lucide-react';
 import { PlayerPhoto } from '@/components/PlayerPhoto';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PageLayout, PageHeader, Section, EmptyBlock } from '@/components/ui/sports-ui';
@@ -98,7 +98,7 @@ function MajorAwardCard({ label, entry, icon: Icon, accentColor, delay }: {
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0">{entry.position}</Badge>
               )}
               {entry.team_abbr && (
-                <TeamBadge
+                <TeamLogo
                   abbreviation={entry.team_abbr}
                   primaryColor={entry.team_color}
                   size="xs"

@@ -8,7 +8,7 @@ import {
   Gamepad2, Award, Trophy, MessageSquare, Settings, Shield,
 } from 'lucide-react';
 import { PlayerSearch } from '@/components/PlayerSearch';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { teamApi } from '@/api/client';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -296,7 +296,7 @@ export function TopNav() {
               to="/my-team"
               className="mr-3 rounded px-1 py-1 transition-colors hover:bg-white/5"
             >
-              <TeamBadge
+              <TeamLogo
                 abbreviation={team.abbreviation}
                 primaryColor={team.primary_color}
                 secondaryColor={team.secondary_color}
@@ -369,7 +369,7 @@ export function TopNav() {
                                       className="flex items-center gap-2.5 px-4 py-2 text-[13px] text-[#ccc] hover:bg-white/5 hover:text-white transition-colors"
                                       onClick={() => { setOpenMenu(null); setTeamsHover(false); }}
                                     >
-                                      <TeamBadge
+                                      <TeamLogo
                                         abbreviation={t.abbreviation}
                                         primaryColor={t.primary_color}
                                         secondaryColor={t.secondary_color}

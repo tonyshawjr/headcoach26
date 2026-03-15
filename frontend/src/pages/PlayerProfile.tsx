@@ -355,7 +355,8 @@ export default function PlayerProfile() {
         const teamColor2 = (team as Record<string, unknown>)?.secondary_color as string ?? teamColor;
         const hasRealPhoto = player.image_url && (
           player.image_url.endsWith('.webp') || player.image_url.endsWith('.jpg') ||
-          player.image_url.endsWith('.jpeg') || player.image_url.endsWith('.png')
+          player.image_url.endsWith('.jpeg') || player.image_url.endsWith('.png') ||
+          (player.image_url.endsWith('.svg') && player.image_url.includes('placeholder_'))
         );
         const posStatCols = getStatsForPosition(player.position).slice(0, 4);
         const seasonData = stats?.season;

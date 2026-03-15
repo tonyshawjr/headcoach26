@@ -6,7 +6,7 @@ import { SocialPostCard } from '@/components/cards/SocialPostCard';
 import { weekLabel, weekLabelShort } from '@/lib/weekLabel';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { Newspaper, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   PageLayout,
@@ -126,7 +126,7 @@ export default function LeagueHub() {
                         {rankings.slice(0, 5).map((r) => (
                           <div key={r.rank} className="flex items-center gap-3 px-4 py-2.5">
                             <span className="w-6 text-center font-stat text-xs text-[var(--text-muted)]">{r.rank}</span>
-                            <TeamBadge
+                            <TeamLogo
                               abbreviation={r.team.abbreviation}
                               primaryColor={r.team.primary_color}
                               secondaryColor={r.team.secondary_color}
@@ -324,7 +324,7 @@ export default function LeagueHub() {
                     {rankings.map((r) => (
                       <div key={r.rank} className="flex items-center gap-4 px-4 py-3">
                         <span className="w-8 text-center font-display text-lg text-[var(--text-muted)]">{r.rank}</span>
-                        <TeamBadge
+                        <TeamLogo
                           abbreviation={r.team.abbreviation}
                           primaryColor={r.team.primary_color}
                           secondaryColor={r.team.secondary_color}

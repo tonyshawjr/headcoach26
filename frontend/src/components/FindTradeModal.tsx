@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { toast } from 'sonner';
 import type { FindTradeResult, TradeOpportunity, TradePackageSide } from '@/api/client';
 
@@ -361,7 +361,7 @@ export function FindTradeModal({ playerId, playerName, open, onOpenChange }: Fin
                       {/* Team header */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <TeamBadge
+                          <TeamLogo
                             abbreviation={opp.team.abbreviation}
                             primaryColor={opp.team.primary_color}
                             secondaryColor={opp.team.secondary_color}

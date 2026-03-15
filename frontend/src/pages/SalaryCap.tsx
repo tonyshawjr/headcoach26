@@ -2,7 +2,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useCapSpace } from '@/hooks/useApi';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import {
   PageLayout,
   PageHeader,
@@ -109,7 +109,7 @@ export default function SalaryCap() {
         icon={DollarSign}
         accentColor={teamColor}
         actions={
-          <TeamBadge
+          <TeamLogo
             abbreviation={team?.abbreviation}
             primaryColor={team?.primary_color}
             secondaryColor={team?.secondary_color}

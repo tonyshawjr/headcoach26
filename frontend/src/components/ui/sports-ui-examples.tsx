@@ -288,7 +288,7 @@
          hero={
            <Hero colorLeft={team.primary_color}>
              <div className="flex items-center gap-4">
-               <TeamBadge ... size="xl" />
+               <TeamLogo ... size="xl" />
                <div>
                  <h1 className="font-display text-3xl text-white">
                    {team.city} {team.name}

@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Check, AlertCircle, Sparkles, ArrowRightLeft, RotateCcw, Users, Settings } from 'lucide-react';
 import { useAiStatus, useConfigureAi, useAvailableTeams, useSwitchTeam, useCareerHistory, useSession } from '@/hooks/useApi';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { toast } from 'sonner';
 import { franchiseApi } from '@/api/client';
 import type { AvailableTeam } from '@/api/client';
@@ -108,7 +108,7 @@ function SwitchTeamDialog() {
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <TeamBadge
+                        <TeamLogo
                           abbreviation={t.abbreviation}
                           primaryColor={t.primary_color}
                           secondaryColor={t.secondary_color}
@@ -188,7 +188,7 @@ function CareerHistorySection() {
           {history.map((h) => (
             <div key={h.id} className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-3">
               <div className="flex items-center gap-3">
-                <TeamBadge
+                <TeamLogo
                   abbreviation={h.abbreviation}
                   primaryColor={h.primary_color}
                   secondaryColor={h.secondary_color}

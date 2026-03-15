@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { useNavigate } from 'react-router-dom';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { PageLayout, PageHeader, Section, EmptyBlock, SportsTabs } from '@/components/ui/sports-ui';
 import { motion } from 'framer-motion';
 import { Trophy, Crown, Shield } from 'lucide-react';
@@ -140,7 +140,7 @@ function TeamRow({
         <span className="text-[10px] font-bold text-[var(--text-muted)] w-4 text-center shrink-0">
           {team.seed}
         </span>
-        <TeamBadge
+        <TeamLogo
           abbreviation={team.abbreviation}
           primaryColor={team.primary_color}
           secondaryColor={team.secondary_color}
@@ -184,7 +184,7 @@ function SeedingPreview({ seeding, myTeamId }: { seeding: Record<string, Playoff
                     <span className="font-stat text-sm font-bold text-[var(--text-muted)] w-5 text-center">
                       {t.seed}
                     </span>
-                    <TeamBadge
+                    <TeamLogo
                       abbreviation={t.abbreviation}
                       primaryColor={t.primary_color}
                       secondaryColor={t.secondary_color}

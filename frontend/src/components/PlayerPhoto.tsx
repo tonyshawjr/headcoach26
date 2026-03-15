@@ -15,9 +15,13 @@ interface PlayerPhotoProps {
   className?: string;
 }
 
-/** Only treat actual photo files as real images. SVGs and other placeholders get the silhouette. */
+/** Only treat actual photo/image files as real images. Old initial-silhouette SVGs were stored as player_*.svg —
+ *  new placeholder headshots from SVGMaker are stored as placeholder_*.svg and should display. */
 function isRealPhoto(url: string): boolean {
-  return url.endsWith('.webp') || url.endsWith('.jpg') || url.endsWith('.jpeg') || url.endsWith('.png');
+  if (url.endsWith('.webp') || url.endsWith('.jpg') || url.endsWith('.jpeg') || url.endsWith('.png')) return true;
+  // Allow SVGMaker placeholder headshots but not old silhouette SVGs
+  if (url.endsWith('.svg') && url.includes('placeholder_')) return true;
+  return false;
 }
 
 export function PlayerPhoto({

@@ -86,7 +86,7 @@ if (str_starts_with($uri, '/uploads/')) {
     $filePath = __DIR__ . '/storage' . substr($uri, strlen('/uploads'));
     if (is_file($filePath)) {
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-        $mimeTypes = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
+        $mimeTypes = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp', 'svg' => 'image/svg+xml'];
         header('Content-Type: ' . ($mimeTypes[$ext] ?? 'application/octet-stream'));
         header('Cache-Control: public, max-age=86400');
         readfile($filePath);

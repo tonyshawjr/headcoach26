@@ -515,13 +515,20 @@ class DraftController
             $status = $usedCount === 0 ? 'not_started' : 'in_progress';
         }
 
+        // Get league's offseason phase so the frontend knows if it's draft week
+        $phaseStmt = $pdo->prepare("SELECT phase, offseason_phase FROM leagues WHERE id = ?");
+        $phaseStmt->execute([$leagueId]);
+        $leaguePhase = $phaseStmt->fetch(\PDO::FETCH_ASSOC);
+
         Response::json([
-            'picks'        => $picks,
-            'current_pick' => $currentPick,
-            'round'        => $currentRound,
-            'total_rounds' => $totalRounds,
-            'draft_year'   => $draftYear,
-            'status'       => $status,
+            'picks'           => $picks,
+            'current_pick'    => $currentPick,
+            'round'           => $currentRound,
+            'total_rounds'    => $totalRounds,
+            'draft_year'      => $draftYear,
+            'status'          => $status,
+            'league_phase'    => $leaguePhase['phase'] ?? null,
+            'offseason_phase' => $leaguePhase['offseason_phase'] ?? null,
         ]);
     }
 

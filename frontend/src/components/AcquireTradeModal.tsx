@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { toast } from 'sonner';
 import type { AcquirePlayerResult, AcquirePackage } from '@/api/client';
 
@@ -151,7 +151,7 @@ export function AcquireTradeModal({ playerId, playerName, open, onOpenChange }: 
               </div>
               {result.team && (
                 <div className="flex items-center gap-2">
-                  <TeamBadge
+                  <TeamLogo
                     abbreviation={result.team.abbreviation}
                     primaryColor={result.team.primary_color}
                     secondaryColor={result.team.secondary_color}

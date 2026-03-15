@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useBoxScore, useGameArticles } from '@/hooks/useApi';
 import { PlayerPhoto } from '@/components/PlayerPhoto';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { motion } from 'framer-motion';
 import type { GameLogEntry } from '@/api/client';
 

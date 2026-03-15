@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useStandings } from '@/hooks/useApi';
 import { useNavigate } from 'react-router-dom';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { motion } from 'framer-motion';
 import { Trophy } from 'lucide-react';
 import { PageLayout, PageHeader, SportsTabs, DataTable, Section } from '@/components/ui/sports-ui';
@@ -170,7 +170,7 @@ function useStandingsColumns(
           const clinch = clinchStatus[row.id] ?? null;
           return (
             <div className="flex items-center gap-2.5">
-              <TeamBadge
+              <TeamLogo
                 abbreviation={row.abbreviation}
                 primaryColor={row.primary_color}
                 secondaryColor={row.secondary_color}

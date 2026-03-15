@@ -1,6 +1,6 @@
 import { Card } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import type { Game } from '@/api/client';
 
 interface GameCardProps {
@@ -49,7 +49,7 @@ export function GameCard({ game, myTeamId }: GameCardProps) {
 
         {/* Away team row */}
         <div className={`flex items-center gap-2.5 rounded px-1.5 py-1 ${awayWon ? 'bg-white/[0.03]' : ''}`}>
-          <TeamBadge
+          <TeamLogo
             abbreviation={away?.abbreviation}
             primaryColor={away?.primary_color}
             secondaryColor={away?.secondary_color}
@@ -70,7 +70,7 @@ export function GameCard({ game, myTeamId }: GameCardProps) {
 
         {/* Home team row */}
         <div className={`flex items-center gap-2.5 rounded px-1.5 py-1 ${homeWon ? 'bg-white/[0.03]' : ''}`}>
-          <TeamBadge
+          <TeamLogo
             abbreviation={home?.abbreviation}
             primaryColor={home?.primary_color}
             secondaryColor={home?.secondary_color}

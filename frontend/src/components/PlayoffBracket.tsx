@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import type { Game } from '@/api/client';
 
 interface PlayoffBracketProps {
@@ -168,7 +168,7 @@ function TeamRow({
         <span className="flex-1 text-[11px] italic text-[var(--text-muted)]">TBD</span>
       ) : (
         <>
-          <TeamBadge
+          <TeamLogo
             abbreviation={team?.abbreviation}
             primaryColor={team?.primary_color}
             secondaryColor={team?.secondary_color}
@@ -461,7 +461,7 @@ export function PlayoffBracket({ games, userTeamId }: PlayoffBracketProps) {
                         : sbMatchup.awayTeam;
                     return champ ? (
                       <>
-                        <TeamBadge
+                        <TeamLogo
                           abbreviation={champ.abbreviation}
                           primaryColor={champ.primary_color}
                           secondaryColor={champ.secondary_color}

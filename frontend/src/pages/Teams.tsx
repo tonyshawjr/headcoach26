@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { teamApi, advanceApi, type ReadyStatus } from '@/api/client';
 import { useQuery } from '@tanstack/react-query';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { Check, Clock } from 'lucide-react';
 
 interface TeamData {
@@ -91,11 +91,11 @@ export default function Teams() {
                           isMyTeam ? 'bg-[var(--accent-blue)]/5' : ''
                         }`}
                       >
-                        <TeamBadge
+                        <TeamLogo
                           abbreviation={team.abbreviation}
                           primaryColor={team.primary_color}
                           secondaryColor={team.secondary_color}
-                          size="sm"
+                          size="md"
                         />
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-[var(--text-primary)]">

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "svgmaker": {
+      "command": "npx",
+      "args": ["-y", "@genwave/svgmaker-mcp"],
+      "env": {
+        "SVGMAKER_API_KEY": "svgmaker-ioff96f835f74b4413"
+      }
+    }
+  }
+}

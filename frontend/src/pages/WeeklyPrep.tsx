@@ -4,7 +4,7 @@ import { useGame, useGamePlan, useSubmitGamePlan } from '@/hooks/useApi';
 import { useAuthStore } from '@/stores/authStore';
 import { toast } from 'sonner';
 import { Swords, Shield, Check, Zap, AlertTriangle, ClipboardList } from 'lucide-react';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import {
   PageLayout,
   PageHeader,
@@ -159,7 +159,7 @@ export default function WeeklyPrep() {
             <div className="text-center">
               <div className="flex items-center justify-center gap-2 mb-2">
                 {myTeam && (
-                  <TeamBadge
+                  <TeamLogo
                     abbreviation={myTeam.abbreviation}
                     primaryColor={myTeam.primary_color}
                     secondaryColor={myTeam.secondary_color}
@@ -189,7 +189,7 @@ export default function WeeklyPrep() {
             <div className="text-center">
               <div className="flex items-center justify-center gap-2 mb-2">
                 {opponent && (
-                  <TeamBadge
+                  <TeamLogo
                     abbreviation={opponent.abbreviation}
                     primaryColor={opponent.primary_color}
                     secondaryColor={opponent.secondary_color}

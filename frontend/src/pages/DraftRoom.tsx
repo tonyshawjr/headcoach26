@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { useDraftClass, useDraftBoard, useMyDraftPicks, useScoutProspect, useDraftPick, useDraftState, useRoster } from '@/hooks/useApi';
 import { useAuthStore } from '@/stores/authStore';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import {
   PageLayout, PageHeader, Section, StatCard, DataTable,
   ActionButton, EmptyBlock, RatingBadge, SidePanel,
@@ -142,7 +142,7 @@ function ScoutingBoard({ onEnterLiveDraft, draftIsLive }: {
 
   const { data: budgetData } = useQuery({
     queryKey: ['scoutingBudget'],
-    queryFn: () => api.get<{ used: number; total: number; remaining: number; per_week: number }>('/draft/budget'),
+    queryFn: () => api.get<{ used_this_week: number; remaining: number; per_week: number; total_scouted: number }>('/draft/budget'),
   });
   const queryPos = posFilter === 'all' ? undefined : posFilter;
   const { data: draftClass } = useDraftClass();
@@ -262,19 +262,29 @@ function ScoutingBoard({ onEnterLiveDraft, draftIsLive }: {
       ),
     },
     {
-      key: 'scouted', label: 'Scout Report',
-      render: (p: DraftProspect) => p.scouted_overall ? <RatingBadge rating={p.scouted_overall} size="sm" /> : <span className="text-xs text-[var(--text-muted)]">Not Scouted</span>,
-    },
-    {
-      key: 'actions', label: '', width: 'w-24',
+      key: 'scouted', label: 'Scouted',
       render: (prospect: DraftProspect) => {
         if (prospect.is_drafted) return null;
+        if (prospect.scouted_overall) {
+          return (
+            <div className="flex items-center gap-2">
+              <RatingBadge rating={prospect.scouted_overall} size="sm" />
+              {prospect.scouted && (
+                <button className="text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-blue)] transition-colors"
+                  onClick={(e) => { e.stopPropagation(); handleScout(prospect); }}
+                  disabled={scoutMut.isPending || budgetExhausted}>
+                  <Search className="h-3 w-3 inline" />
+                </button>
+              )}
+            </div>
+          );
+        }
         return (
-          <ActionButton size="sm" variant="secondary" icon={Search}
-            onClick={() => handleScout(prospect)}
-            disabled={scoutMut.isPending || (budgetExhausted && !prospect.scouted)}>
-            {prospect.scouted ? 'Re-Scout' : 'Scout'}
-          </ActionButton>
+          <button className="text-xs text-[var(--accent-blue)] hover:underline disabled:text-[var(--text-muted)] disabled:no-underline"
+            onClick={(e) => { e.stopPropagation(); handleScout(prospect); }}
+            disabled={scoutMut.isPending || budgetExhausted}>
+            Scout
+          </button>
         );
       },
     },
@@ -316,14 +326,14 @@ function ScoutingBoard({ onEnterLiveDraft, draftIsLive }: {
               <span className="font-display text-sm">Scouting Reports</span>
             </div>
             <span className={`font-mono text-sm font-semibold ${budgetExhausted ? 'text-red-400' : 'text-[var(--text-primary)]'}`}>
-              {scoutsRemaining} of {budgetData?.per_week ?? 4} remaining this week
+              {scoutsRemaining} of {budgetData?.per_week ?? 10} remaining this week
             </span>
           </div>
           <div className="mt-2 h-1.5 w-full rounded-full bg-[var(--bg-primary)] overflow-hidden">
             <div className={`h-full rounded-full transition-all duration-300 ${budgetExhausted ? 'bg-red-500' : scoutsRemaining <= 3 ? 'bg-yellow-500' : 'bg-[var(--accent-blue)]'}`}
-              style={{ width: `${Math.min(100, ((budgetData?.used ?? 0) / (budgetData?.per_week ?? 4)) * 100)}%` }} />
+              style={{ width: `${Math.min(100, ((budgetData?.used_this_week ?? 0) / (budgetData?.per_week ?? 10)) * 100)}%` }} />
           </div>
-          {budgetExhausted && <p className="text-xs text-red-400 mt-1.5">All scouting reports used. {budgetData?.per_week ?? 4} new reports unlock next week.</p>}
+          {budgetExhausted && <p className="text-xs text-red-400 mt-1.5">All scouting reports used. {budgetData?.per_week ?? 10} new reports unlock next week.</p>}
           {!budgetExhausted && scoutsRemaining <= 3 && <p className="text-xs text-yellow-400 mt-1.5">{scoutsRemaining} report{scoutsRemaining === 1 ? '' : 's'} remaining — scout wisely</p>}
         </div>
       </Section>
@@ -499,7 +509,7 @@ function ProspectSpotlight({ prospect, pick, onDraft, onScout, scoutingDisabled,
             {pick.prospect_college && <span className="text-white/50 text-sm">{pick.prospect_college}</span>}
           </div>
           <div className="flex items-center gap-3">
-            <TeamBadge abbreviation={pick.team_abbreviation} primaryColor={pick.team_primary_color} secondaryColor={pick.team_secondary_color} size="md" />
+            <TeamLogo abbreviation={pick.team_abbreviation} primaryColor={pick.team_primary_color} secondaryColor={pick.team_secondary_color} size="md" />
             <div>
               <p className="text-white/80 text-sm font-semibold">{pick.team_city} {pick.team_name}</p>
               <p className="text-white/40 text-xs">Selected this player</p>
@@ -568,7 +578,7 @@ function PickRow({ pick, isActive, isUserTeam, onClick }: {
       }`}>
       <div className="flex items-center gap-3 px-3 py-2.5">
         <span className={`font-mono text-sm font-bold w-6 text-center shrink-0 ${isActive ? 'text-white' : 'text-white/40'}`}>{pick.pick_number}</span>
-        <TeamBadge abbreviation={pick.team_abbreviation} primaryColor={pick.team_primary_color} secondaryColor={pick.team_secondary_color} size="sm" />
+        <TeamLogo abbreviation={pick.team_abbreviation} primaryColor={pick.team_primary_color} secondaryColor={pick.team_secondary_color} size="sm" />
         <div className="min-w-0 flex-1">
           <p className={`text-xs font-semibold uppercase tracking-wide truncate ${isActive ? 'text-white' : 'text-white/70'}`}>{pick.team_city} {pick.team_name}</p>
           {pick.is_used && pick.prospect_name ? (
@@ -682,7 +692,7 @@ function LiveDraft({ onExit }: { onExit: () => void }) {
   const { data: myPicks } = useMyDraftPicks();
   const { data: budgetData } = useQuery({
     queryKey: ['scoutingBudget'],
-    queryFn: () => api.get<{ used: number; total: number; remaining: number; per_week: number }>('/draft/budget'),
+    queryFn: () => api.get<{ used_this_week: number; remaining: number; per_week: number; total_scouted: number }>('/draft/budget'),
   });
   const scoutMut = useScoutProspect();
   const draftMut = useDraftPick();
@@ -782,7 +792,7 @@ function LiveDraft({ onExit }: { onExit: () => void }) {
             <div className="bg-red-600 px-4 py-3">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <TeamBadge abbreviation={currentPick.team_abbreviation} primaryColor={currentPick.team_primary_color} secondaryColor={currentPick.team_secondary_color} size="sm" />
+                  <TeamLogo abbreviation={currentPick.team_abbreviation} primaryColor={currentPick.team_primary_color} secondaryColor={currentPick.team_secondary_color} size="sm" />
                   <div>
                     <p className="text-white text-xs font-bold uppercase">{currentPick.team_city} {currentPick.team_name}</p>
                     <p className="text-white/70 text-[10px]">Pick #{currentPick.pick_number}</p>
@@ -891,7 +901,10 @@ function LiveDraft({ onExit }: { onExit: () => void }) {
 export default function DraftRoom() {
   const [mode, setMode] = useState<'scouting' | 'live'>('scouting');
   const { data: draftState } = useDraftState();
-  const draftIsLive = draftState?.status === 'in_progress' || draftState?.status === 'not_started';
+  // Only show live draft when the league is in the draft week (pre_draft or draft offseason phase)
+  const offseasonPhase = draftState?.offseason_phase;
+  const isDraftWeek = offseasonPhase === 'pre_draft' || offseasonPhase === 'draft';
+  const draftIsLive = isDraftWeek && (draftState?.status === 'in_progress' || draftState?.status === 'not_started');
 
   if (mode === 'live') return <LiveDraft onExit={() => setMode('scouting')} />;
   return <ScoutingBoard onEnterLiveDraft={() => setMode('live')} draftIsLive={draftIsLive} />;

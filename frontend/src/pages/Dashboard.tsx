@@ -4,7 +4,7 @@ import {
   useSchedule, useArticles, useRoster, useSimulateWeek,
   useAdvanceWeek, useStandings, useCapSpace,
 } from '@/hooks/useApi';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import Onboarding from '@/components/Onboarding';
 import {
   ClipboardList, Play, FastForward, GraduationCap,
@@ -197,7 +197,7 @@ function FeaturedGameCard({ game, label }: { game: Game; label: string }) {
             >
               {away?.abbreviation}
             </span>
-            <TeamBadge abbreviation={away?.abbreviation} primaryColor="#fff" secondaryColor={awayColor} size="md" />
+            <TeamLogo abbreviation={away?.abbreviation} primaryColor="#fff" secondaryColor={awayColor} size="md" />
           </div>
 
           {/* Home side */}
@@ -211,7 +211,7 @@ function FeaturedGameCard({ game, label }: { game: Game; label: string }) {
             >
               {home?.abbreviation}
             </span>
-            <TeamBadge abbreviation={home?.abbreviation} primaryColor="#fff" secondaryColor={homeColor} size="md" />
+            <TeamLogo abbreviation={home?.abbreviation} primaryColor="#fff" secondaryColor={homeColor} size="md" />
           </div>
         </div>
 
@@ -315,7 +315,7 @@ function TeamSnapshot() {
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">
       <div className="flex items-center gap-3 mb-3">
-        <TeamBadge abbreviation={team?.abbreviation} primaryColor={team?.primary_color} secondaryColor={team?.secondary_color} size="sm" />
+        <TeamLogo abbreviation={team?.abbreviation} primaryColor={team?.primary_color} secondaryColor={team?.secondary_color} size="sm" />
         <p className="font-display text-base text-[var(--text-primary)] tracking-tight">{team?.city} {team?.name}</p>
       </div>
       <div className="grid grid-cols-3 gap-2">
@@ -360,7 +360,7 @@ function StandingsSnapshot() {
           return (
             <div key={t.id} className={`flex items-center gap-2 py-2 px-2 rounded text-sm ${isMe ? 'bg-[var(--accent-blue)]/8' : ''}`}>
               <span className="w-3 text-xs text-[var(--text-muted)] font-stat">{i + 1}</span>
-              <TeamBadge abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="xs" />
+              <TeamLogo abbreviation={t.abbreviation} primaryColor={t.primary_color} secondaryColor={t.secondary_color} size="xs" />
               <span className={`flex-1 font-medium ${isMe ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{t.abbreviation}</span>
               <span className="font-stat text-[var(--text-secondary)]">{t.wins}-{t.losses}</span>
             </div>
@@ -388,13 +388,13 @@ function NextGamePreview({ game, myTeamId }: { game: Game; myTeamId?: number }) 
         </p>
         <div className="flex items-center justify-center gap-4">
           <div className="flex flex-col items-center gap-1.5">
-            <TeamBadge abbreviation={away?.abbreviation} primaryColor={away?.primary_color} secondaryColor={away?.secondary_color} size="md" />
+            <TeamLogo abbreviation={away?.abbreviation} primaryColor={away?.primary_color} secondaryColor={away?.secondary_color} size="md" />
             <span className="text-[11px] font-bold text-[var(--text-primary)]">{away?.abbreviation}</span>
             <span className="text-[10px] text-[var(--text-muted)]">{away?.wins ?? 0}-{away?.losses ?? 0}</span>
           </div>
           <span className="text-sm font-bold text-[var(--text-muted)]">{isHome ? 'VS' : '@'}</span>
           <div className="flex flex-col items-center gap-1.5">
-            <TeamBadge abbreviation={home?.abbreviation} primaryColor={home?.primary_color} secondaryColor={home?.secondary_color} size="md" />
+            <TeamLogo abbreviation={home?.abbreviation} primaryColor={home?.primary_color} secondaryColor={home?.secondary_color} size="md" />
             <span className="text-[11px] font-bold text-[var(--text-primary)]">{home?.abbreviation}</span>
             <span className="text-[10px] text-[var(--text-muted)]">{home?.wins ?? 0}-{home?.losses ?? 0}</span>
           </div>

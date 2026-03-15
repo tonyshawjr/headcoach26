@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { motion } from 'framer-motion';
 import { ArrowLeftRight, CheckCircle, XCircle, Scale, Send, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import type { Trade, TradeEvaluation } from '@/api/client';
 import {
   PageLayout,
@@ -127,7 +127,7 @@ function TradeCard({ trade, myTeamId, onRespond }: {
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <TeamBadge
+              <TeamLogo
                 abbreviation={trade.proposing_team?.abbreviation}
                 primaryColor={trade.proposing_team?.primary_color}
                 secondaryColor={trade.proposing_team?.secondary_color}
@@ -139,7 +139,7 @@ function TradeCard({ trade, myTeamId, onRespond }: {
             </div>
             <ArrowLeftRight className="h-4 w-4 text-[var(--text-muted)]" />
             <div className="flex items-center gap-2">
-              <TeamBadge
+              <TeamLogo
                 abbreviation={trade.receiving_team?.abbreviation}
                 primaryColor={trade.receiving_team?.primary_color}
                 secondaryColor={trade.receiving_team?.secondary_color}

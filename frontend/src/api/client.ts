@@ -855,6 +855,8 @@ export interface DraftState {
   total_rounds: number;
   draft_year: number;
   status: 'in_progress' | 'complete' | 'not_started';
+  league_phase: string | null;
+  offseason_phase: string | null;
 }
 
 export interface StaffMember {

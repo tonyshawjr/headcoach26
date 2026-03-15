@@ -968,6 +968,12 @@ class PlayersController
             $ovr = (int) $p['overall_rating'];
             $age = (int) $p['age'];
             $potential = $p['potential'] ?? 'average';
+            $currentSalary = (int) $p['salary_annual'];
+
+            // Value score: how much production per dollar?
+            // Higher = better deal for the team
+            $costRatio = $marketValue > 0 ? $currentSalary / $marketValue : 1.0;
+            // < 1.0 means underpaid (good deal), > 1.0 means overpaid
 
             $playerInfo = [
                 'id' => (int) $p['id'],
@@ -977,44 +983,73 @@ class PlayersController
                 'age' => $age,
                 'potential' => $potential,
                 'is_starter' => $isStarter,
-                'current_salary' => (int) $p['salary_annual'],
+                'current_salary' => $currentSalary,
                 'market_value' => $marketValue,
             ];
 
-            // Categorize
-            if ($ovr >= 85 && $age <= 28) {
+            // ── MUST SIGN: Elite talent you can't replace ──
+            if ($ovr >= 85 && $age <= 30) {
                 $playerInfo['reason'] = "Franchise cornerstone. Lock him up.";
                 $playerInfo['gm_note'] = "Don't even think about letting this one go.";
                 $mustSign[] = $playerInfo;
                 $totalMustCost += $marketValue;
-            } elseif ($isStarter && $ovr >= 78 && $age <= 30) {
-                $playerInfo['reason'] = "Quality starter. Worth the investment.";
+
+            } elseif ($isStarter && $ovr >= 80 && $age <= 29) {
+                $playerInfo['reason'] = "Top-tier starter. Worth the investment.";
                 $playerInfo['gm_note'] = "Losing him hurts our lineup.";
                 $mustSign[] = $playerInfo;
                 $totalMustCost += $marketValue;
+
+            // ── SHOULD SIGN: Good starters and young upside ──
             } elseif ($isStarter && ($potential === 'elite' || $potential === 'high') && $age <= 26) {
                 $playerInfo['reason'] = "Young with upside. Could become a star.";
                 $playerInfo['gm_note'] = "Invest now before he gets expensive.";
                 $shouldSign[] = $playerInfo;
                 $totalShouldCost += $marketValue;
-            } elseif ($isStarter && $ovr >= 73) {
-                $playerInfo['reason'] = "Solid contributor.";
-                $playerInfo['gm_note'] = "Nice to keep if the money works.";
+
+            } elseif ($isStarter && $ovr >= 75 && $age <= 30) {
+                $playerInfo['reason'] = "Quality starter in his prime.";
+                $playerInfo['gm_note'] = "Solid piece to keep around.";
                 $shouldSign[] = $playerInfo;
                 $totalShouldCost += $marketValue;
+
+            } elseif ($isStarter && $ovr >= 70 && $costRatio <= 0.85) {
+                // Starter on a bargain deal — even if OVR isn't elite, the value is good
+                $playerInfo['reason'] = "Bargain starter. Good value for the money.";
+                $playerInfo['gm_note'] = "Making \$" . number_format($currentSalary / 1000000, 1) . "M — worth \$" . number_format($marketValue / 1000000, 1) . "M. Keep him.";
+                $shouldSign[] = $playerInfo;
+                $totalShouldCost += $marketValue;
+
+            // ── CAN LET GO: Everyone else ──
             } else {
-                // Can let go — find specific replacement
                 $replacement = $this->findReplacement($pdo, $p, $teamId, $auth['league_id']);
-                $alternative = '';
-                if ($age >= 30 && $potential !== 'elite') {
-                    $alternative = "Aging and limited upside.";
+
+                // Build a reason that actually makes sense
+                $reason = '';
+                $gmNote = '';
+
+                if (!$isStarter && $ovr < 70) {
+                    $reason = "Backup with limited impact.";
+                    $gmNote = "Depth piece — won't miss him.";
+                } elseif ($age >= 31 && $ovr < 78 && ($potential === 'limited' || $potential === 'average')) {
+                    $reason = "Declining player on the wrong side of 30.";
+                    $gmNote = "His best years are behind him.";
+                } elseif ($age >= 30 && $potential === 'limited') {
+                    $reason = "Aging with limited development ceiling.";
+                    $gmNote = "Not going to get better from here.";
+                } elseif ($costRatio > 1.15) {
+                    $reason = "Overpaid relative to his production.";
+                    $gmNote = "Making \$" . number_format($currentSalary / 1000000, 1) . "M but only worth about \$" . number_format($marketValue / 1000000, 1) . "M.";
                 } elseif (!$isStarter) {
-                    $alternative = "Depth piece — not a priority.";
+                    $reason = "Depth piece — not a priority.";
+                    $gmNote = "Can find similar production cheaper.";
                 } else {
-                    $alternative = "Can find similar production for less.";
+                    $reason = "Replaceable starter.";
+                    $gmNote = "Solid but not worth a premium.";
                 }
-                $playerInfo['reason'] = $alternative;
-                $playerInfo['gm_note'] = "Save the money for bigger priorities.";
+
+                $playerInfo['reason'] = $reason;
+                $playerInfo['gm_note'] = $gmNote;
                 $playerInfo['replacement'] = $replacement;
                 $canLetGo[] = $playerInfo;
             }
@@ -1145,51 +1180,76 @@ class PlayersController
     {
         $pos = $player['position'];
         $ovr = (int) $player['overall_rating'];
+        $currentSalary = (int) ($player['salary_annual'] ?? 0);
+        $currentMarket = (int) ($player['market_value'] ?? $currentSalary);
+        $contractEngine = new ContractEngine();
 
-        // Check free agents at this position
+        // Check free agents at this position — get several candidates, not just the best OVR
         $faStmt = $pdo->prepare(
-            "SELECT fa.*, p.first_name, p.last_name, p.overall_rating, p.age, p.potential
+            "SELECT fa.*, p.first_name, p.last_name, p.position, p.overall_rating, p.age, p.potential
              FROM free_agents fa JOIN players p ON fa.player_id = p.id
              WHERE fa.league_id = ? AND p.position = ? AND p.overall_rating >= ? AND fa.status = 'available'
-             ORDER BY p.overall_rating DESC LIMIT 1"
+             ORDER BY p.overall_rating DESC LIMIT 5"
         );
-        $faStmt->execute([$leagueId, $pos, max(60, $ovr - 5)]);
-        $fa = $faStmt->fetch();
+        $faStmt->execute([$leagueId, $pos, max(55, $ovr - 8)]);
+        $faList = $faStmt->fetchAll(\PDO::FETCH_ASSOC);
 
-        if ($fa) {
-            $contractEngine = new ContractEngine();
+        // Find the best VALUE replacement — not just the highest OVR
+        $bestFA = null;
+        $bestScore = -999;
+
+        foreach ($faList as $fa) {
             $faMv = $contractEngine->calculateMarketValue($fa);
-            $currentSalary = (int) ($player['salary_annual'] ?? 0);
-
-            // Only suggest the FA if they're actually a better deal
-            // (higher OVR for similar money, or similar OVR for less money)
             $faOvr = (int) $fa['overall_rating'];
-            $isCheaper = $faMv <= $currentSalary * 1.2; // within 20% of current salary
-            $isUpgrade = $faOvr > $ovr;
-            $isBetterValue = $isUpgrade || ($isCheaper && $faOvr >= $ovr - 2);
 
-            if ($isBetterValue) {
-                $note = '';
-                if ($isUpgrade && $isCheaper) {
-                    $note = "Upgrade available in free agency for similar money.";
-                } elseif ($isUpgrade) {
-                    $note = "Upgrade available in free agency.";
-                } else {
-                    $note = "Similar player available — saves cap space.";
-                }
+            // Score: prioritize cheaper replacements that maintain talent level
+            // OVR difference (positive = upgrade, negative = downgrade)
+            $ovrDiff = $faOvr - $ovr;
+            // Cost savings (positive = cheaper, negative = more expensive)
+            $costSavings = $currentMarket - $faMv;
 
-                return [
-                    'type' => 'free_agent',
-                    'player_id' => (int) $fa['player_id'],
-                    'name' => $fa['first_name'] . ' ' . $fa['last_name'],
-                    'position' => $pos,
-                    'overall_rating' => $faOvr,
-                    'age' => (int) $fa['age'],
-                    'potential' => $fa['potential'],
-                    'estimated_cost' => $faMv,
-                    'note' => $note,
-                ];
+            // Value score: reward cheaper options, penalize expensive ones
+            $score = $ovrDiff * 2 + ($costSavings / 1000000); // +1 per $1M saved
+
+            // Hard filter: skip anyone who costs more than 50% above current market value
+            if ($faMv > $currentMarket * 1.5 && $faOvr <= $ovr + 3) continue;
+
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestFA = $fa;
+                $bestFA['_mv'] = $faMv;
+                $bestFA['_ovr_diff'] = $ovrDiff;
             }
+        }
+
+        if ($bestFA) {
+            $faMv = (int) $bestFA['_mv'];
+            $faOvr = (int) $bestFA['overall_rating'];
+            $isCheaper = $faMv < $currentMarket;
+            $isUpgrade = $faOvr > $ovr;
+
+            $note = '';
+            if ($isUpgrade && $isCheaper) {
+                $note = "Better player for less money.";
+            } elseif ($isUpgrade) {
+                $note = "Upgrade at " . $pos . " — \$" . number_format($faMv / 1000000, 1) . "M/yr.";
+            } elseif ($isCheaper) {
+                $note = "Similar production, saves \$" . number_format(($currentMarket - $faMv) / 1000000, 1) . "M/yr.";
+            } else {
+                $note = "Comparable option in free agency.";
+            }
+
+            return [
+                'type' => 'free_agent',
+                'player_id' => (int) $bestFA['player_id'],
+                'name' => $bestFA['first_name'] . ' ' . $bestFA['last_name'],
+                'position' => $pos,
+                'overall_rating' => $faOvr,
+                'age' => (int) $bestFA['age'],
+                'potential' => $bestFA['potential'],
+                'estimated_cost' => $faMv,
+                'note' => $note,
+            ];
         }
 
         // Check draft prospects at this position (if scouted)

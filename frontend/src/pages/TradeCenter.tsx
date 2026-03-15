@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeftRight, ArrowLeft, TrendingUp, TrendingDown, Shield, Star, Gem, User, Target, Handshake, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { TeamBadge } from '@/components/TeamBadge';
+import { TeamLogo } from '@/components/TeamLogo';
 import { PlayerPhoto } from '@/components/PlayerPhoto';
 import { toast } from 'sonner';
 import type { FindTradeResult, TradeOpportunity, TradePackageSide } from '@/api/client';
@@ -442,7 +442,7 @@ function OpportunityCard({
         {/* -- Header: Team info + interest + mode -- */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <TeamBadge
+            <TeamLogo
               abbreviation={opp.team.abbreviation}
               primaryColor={opp.team.primary_color}
               secondaryColor={opp.team.secondary_color}
@@ -1084,7 +1084,7 @@ export default function TradeCenter() {
                       {oppTeam && (
                         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-4">
                           <div className="flex items-center gap-3">
-                            <TeamBadge
+                            <TeamLogo
                               abbreviation={oppTeam.abbreviation}
                               primaryColor={oppTeam.primary_color}
                               secondaryColor={oppTeam.secondary_color}
