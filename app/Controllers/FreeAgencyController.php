@@ -73,15 +73,17 @@ class FreeAgencyController
             return;
         }
 
+        $freeAgentId = $playerId; // route param is the free_agent ID
         $bid = $this->freeAgencyEngine->placeBid(
+            $freeAgentId,
             $auth['team_id'],
-            $playerId,
+            $auth['coach_id'] ?? 0,
             $salaryOffer,
             $yearsOffer
         );
 
-        if (!$bid) {
-            Response::error('Unable to place bid. Player may not be a free agent or cap space insufficient.');
+        if (isset($bid['error'])) {
+            Response::error($bid['error']);
             return;
         }
 

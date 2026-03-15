@@ -953,6 +953,16 @@ class FreeAgencyEngine
 
     private function getTeam(int $id): ?array
     {
+        // Recalculate cap_used from actual contracts to avoid drift
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(SUM(cap_hit), 0) FROM contracts WHERE team_id = ? AND status = 'active'"
+        );
+        $stmt->execute([$id]);
+        $actualCapUsed = (int) $stmt->fetchColumn();
+
+        $this->db->prepare("UPDATE teams SET cap_used = ? WHERE id = ?")
+            ->execute([$actualCapUsed, $id]);
+
         $stmt = $this->db->prepare("SELECT * FROM teams WHERE id = ?");
         $stmt->execute([$id]);
         return $stmt->fetch() ?: null;
