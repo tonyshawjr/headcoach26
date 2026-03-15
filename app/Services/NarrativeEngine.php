@@ -2169,4 +2169,591 @@ class NarrativeEngine
         $v = $n % 100;
         return $n . ($s[($v - 20) % 10] ?? $s[$v] ?? $s[0]);
     }
+
+    // ─── Weekly Column ───────────────────────────────────────────────
+
+    /**
+     * Generate a weekly opinion column from one of the three columnists.
+     * Rotates columnists by week number and picks a hot-take topic
+     * based on the current league state.
+     */
+    public function generateWeeklyColumn(int $leagueId, int $seasonId, int $week): void
+    {
+        $teams = $this->db->prepare("SELECT * FROM teams WHERE league_id = ? ORDER BY wins DESC");
+        $teams->execute([$leagueId]);
+        $teams = $teams->fetchAll();
+
+        if (empty($teams)) return;
+
+        // Rotate columnist by week
+        $columnistKeys = ['terry_hollis', 'dana_reeves', 'marcus_bell'];
+        $columnistKey = $columnistKeys[$week % 3];
+        $columnist = self::COLUMNISTS[$columnistKey];
+        $authorName = $columnist['name'];
+
+        // Determine hot-take topic
+        $topic = null;
+        $focusTeam = null;
+
+        // Check for 5+ win streak
+        foreach ($teams as $t) {
+            if (str_starts_with($t['streak'] ?? '', 'W')) {
+                $streakNum = (int) substr($t['streak'], 1);
+                if ($streakNum >= 5) {
+                    $topic = 'contender';
+                    $focusTeam = $t;
+                    break;
+                }
+            }
+        }
+
+        // Check for top team that just lost
+        if (!$topic) {
+            foreach (array_slice($teams, 0, 5) as $t) {
+                if (str_starts_with($t['streak'] ?? '', 'L')) {
+                    $topic = 'overreaction';
+                    $focusTeam = $t;
+                    break;
+                }
+            }
+        }
+
+        // Tight playoff race (week 10+)
+        if (!$topic && $week >= 10) {
+            $topWins = (int) $teams[0]['wins'];
+            $closeTeams = 0;
+            foreach ($teams as $t) {
+                if ($topWins - (int) $t['wins'] <= 2) $closeTeams++;
+            }
+            if ($closeTeams >= 4) {
+                $topic = 'playoff_race';
+            }
+        }
+
+        // Bottom team improving
+        if (!$topic) {
+            $bottomTeams = array_slice($teams, -5);
+            foreach ($bottomTeams as $t) {
+                if (str_starts_with($t['streak'] ?? '', 'W')) {
+                    $streakNum = (int) substr($t['streak'], 1);
+                    if ($streakNum >= 2) {
+                        $topic = 'sleeper';
+                        $focusTeam = $t;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Default
+        if (!$topic) {
+            $topic = 'power_debate';
+            $focusTeam = $teams[0]; // best team
+        }
+
+        // Build the column
+        $paragraphs = [];
+        $headline = '';
+        $teamId = $focusTeam ? (int) $focusTeam['id'] : null;
+
+        switch ($topic) {
+            case 'contender':
+                $name = $focusTeam['city'] . ' ' . $focusTeam['name'];
+                $record = $focusTeam['wins'] . '-' . $focusTeam['losses'];
+                $streakNum = (int) substr($focusTeam['streak'], 1);
+                $headline = "{$authorName}: The {$name} Are the Real Deal";
+
+                $paragraphs[] = $this->pickOne($columnist['phrases']['lede'] ?? ['Let me be clear about something.']);
+                $paragraphs[] = "The {$name} have won {$streakNum} straight games, and at {$record}, they are not just a good team — they are a legitimate contender. This is not a fluke. This is a team that has found its identity and is playing with confidence that only comes from winning.";
+                $paragraphs[] = "What stands out most is the consistency. Week after week, they find ways to win. Whether it is a shootout or a defensive slugfest, this roster has the depth and the coaching to adapt. That is the hallmark of a championship-caliber team.";
+                $paragraphs[] = "The rest of the league should be paying attention. When a team gets on a roll like this, momentum becomes a weapon. Players believe. The locker room tightens. Every game feels like a statement.";
+                if ($columnistKey === 'terry_hollis') {
+                    $paragraphs[] = $this->pickOne($columnist['phrases']['praise_defense'] ?? ['They are playing complete football.']);
+                } elseif ($columnistKey === 'dana_reeves') {
+                    $paragraphs[] = $this->pickOne($columnist['phrases']['analysis'] ?? ['The metrics support the eye test.']);
+                } else {
+                    $paragraphs[] = $this->pickOne($columnist['phrases']['hero'] ?? ['This team has something special.']);
+                }
+                $paragraphs[] = "Mark my words: if they stay healthy, the {$name} are going to be playing deep into January.";
+                break;
+
+            case 'overreaction':
+                $name = $focusTeam['city'] . ' ' . $focusTeam['name'];
+                $record = $focusTeam['wins'] . '-' . $focusTeam['losses'];
+                $headline = "{$authorName}: Are the {$name} in Trouble?";
+
+                $paragraphs[] = "Let me ask you a question: when was the last time the {$name} looked like the team everyone thought they were?";
+                $paragraphs[] = "At {$record}, the record still looks respectable. But records can lie. The {$name} have been sliding, and the cracks are starting to show. A loss here, a close call there — suddenly the narrative shifts.";
+                $paragraphs[] = "Now, I am not hitting the panic button yet. Good teams go through rough patches. But there is a difference between a rough patch and a fundamental problem. The question is which one are we looking at.";
+                if ($columnistKey === 'terry_hollis') {
+                    $paragraphs[] = $this->pickOne($columnist['phrases']['criticism'] ?? ['Something needs to change.']);
+                } elseif ($columnistKey === 'dana_reeves') {
+                    $paragraphs[] = "The efficiency numbers have been declining for weeks. That is not noise — that is a trend.";
+                } else {
+                    $paragraphs[] = "You can feel the tension. A team that was once loose and confident is now pressing, second-guessing, waiting for the other shoe to drop.";
+                }
+                $paragraphs[] = "The next two weeks will tell us everything. Either the {$name} right the ship, or we start talking about what went wrong with a season that had so much promise.";
+                break;
+
+            case 'playoff_race':
+                $headline = "{$authorName}: This Playoff Race Is Going Down to the Wire";
+                $topNames = [];
+                foreach (array_slice($teams, 0, 6) as $t) {
+                    $topNames[] = $t['abbreviation'] . ' (' . $t['wins'] . '-' . $t['losses'] . ')';
+                }
+
+                $paragraphs[] = "Buckle up, folks. This playoff race is going to be an absolute war of attrition.";
+                $paragraphs[] = "Just look at the standings: " . implode(', ', $topNames) . ". There is barely any separation at the top. One loss — one bad break — and your season could be over.";
+                $paragraphs[] = "This is the time of year when depth matters. Injuries pile up, schedules get tougher, and the pretenders get exposed. The teams that handle the pressure will punch their ticket. The ones that crumble will be watching from home.";
+                if ($columnistKey === 'dana_reeves') {
+                    $paragraphs[] = "Strength of remaining schedule is going to be the great equalizer. Some of these teams have a gauntlet ahead of them.";
+                } else {
+                    $paragraphs[] = "This is what makes football great. Every game matters. Every snap counts. There is no margin for error.";
+                }
+                $paragraphs[] = "If you are a fan of any of these teams, clear your schedule for the next few weeks. This is going to be appointment viewing.";
+                break;
+
+            case 'sleeper':
+                $name = $focusTeam['city'] . ' ' . $focusTeam['name'];
+                $record = $focusTeam['wins'] . '-' . $focusTeam['losses'];
+                $headline = "{$authorName}: Don't Sleep on the {$name}";
+
+                $paragraphs[] = "Nobody is talking about the {$name}. And that might be exactly how they want it.";
+                $paragraphs[] = "At {$record}, they are not going to jump off the page. But watch the tape. This team is improving week by week, and the win streak is no accident. Something is clicking.";
+                $paragraphs[] = "The roster might not be stacked with Pro Bowlers, but there is cohesion here. Players are buying in. The scheme is getting sharper. And in a league where any given Sunday applies, that kind of momentum is dangerous.";
+                if ($columnistKey === 'terry_hollis') {
+                    $paragraphs[] = "This is old-school football. Tough, physical, and relentless. They may not have the flashiest players, but they have grit. And grit wins in December.";
+                } elseif ($columnistKey === 'dana_reeves') {
+                    $paragraphs[] = "The underlying metrics show a team performing above their record. Their point differential suggests they are better than their win-loss shows.";
+                } else {
+                    $paragraphs[] = "Every great story needs an underdog. The {$name} might just be writing the best story in the league right now.";
+                }
+                $paragraphs[] = "Keep an eye on this team. They are not done yet.";
+                break;
+
+            default: // power_debate
+                $bestTeam = $teams[0];
+                $worstTeam = end($teams);
+                $headline = "{$authorName}: Who Is Really the Best Team in the League?";
+
+                $paragraphs[] = "Every week, I look at the standings and I ask myself the same question: who is actually the best team in this league? And every week, the answer gets muddier.";
+                $paragraphs[] = "On paper, the {$bestTeam['city']} {$bestTeam['name']} sit atop the standings at {$bestTeam['wins']}-{$bestTeam['losses']}. But being at the top and being the best are not always the same thing.";
+                $paragraphs[] = "There are teams with better passing attacks. Teams with more dominant defenses. Teams with better coaching. The question is which combination of strengths matters most come playoff time.";
+                if ($columnistKey === 'terry_hollis') {
+                    $paragraphs[] = "In my experience, the team that wins the Super Bowl is the team that can run the ball and stop the run. Everything else is noise.";
+                } elseif ($columnistKey === 'dana_reeves') {
+                    $paragraphs[] = "The advanced metrics point to pass efficiency and pressure rate as the two strongest predictors of postseason success. How does your team stack up?";
+                } else {
+                    $paragraphs[] = "Sometimes the best team is not the most talented one. It is the one with the best story, the most motivation, the chip on its shoulder.";
+                }
+                $paragraphs[] = "Meanwhile, the {$worstTeam['city']} {$worstTeam['name']} at {$worstTeam['wins']}-{$worstTeam['losses']} are already looking ahead to the draft. That is the harsh reality of this league — there is no middle ground.";
+                $paragraphs[] = "Ask me again in three weeks. The answer might be completely different.";
+                break;
+        }
+
+        $body = implode("\n\n", $paragraphs);
+        $now = date('Y-m-d H:i:s');
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, 'column', ?, ?, ?, ?, ?, NULL, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, $week,
+            $headline, $body,
+            $authorName, $columnistKey,
+            $teamId,
+            $now,
+        ]);
+    }
+
+    // ─── Morning Blitz ───────────────────────────────────────────────
+
+    /**
+     * Generate a "Morning Blitz" weekly roundup article summarizing
+     * the biggest win, upset, game of the week, notable stats, and a
+     * preview tease for the next week.
+     */
+    public function generateMorningBlitz(int $leagueId, int $seasonId, int $week): void
+    {
+        $games = $this->db->prepare(
+            "SELECT g.*, g.home_score, g.away_score,
+                    ht.city as home_city, ht.name as home_name, ht.abbreviation as home_abbr, ht.wins as home_wins, ht.losses as home_losses,
+                    at.city as away_city, at.name as away_name, at.abbreviation as away_abbr, at.wins as away_wins, at.losses as away_losses
+             FROM games g
+             JOIN teams ht ON g.home_team_id = ht.id
+             JOIN teams at ON g.away_team_id = at.id
+             WHERE g.league_id = ? AND g.week = ? AND g.is_simulated = 1"
+        );
+        $games->execute([$leagueId, $week]);
+        $games = $games->fetchAll();
+
+        if (empty($games)) return;
+
+        $sections = [];
+
+        // Calculate margins and identify key games
+        $biggestMargin = 0;
+        $biggestGame = null;
+        $smallestMargin = PHP_INT_MAX;
+        $closestGame = null;
+        $upsetGame = null;
+        $upsetDiff = 0;
+
+        foreach ($games as $g) {
+            $hs = (int) $g['home_score'];
+            $as = (int) $g['away_score'];
+            $margin = abs($hs - $as);
+
+            if ($margin > $biggestMargin) {
+                $biggestMargin = $margin;
+                $biggestGame = $g;
+            }
+            if ($margin < $smallestMargin) {
+                $smallestMargin = $margin;
+                $closestGame = $g;
+            }
+
+            // Upset: lower-record team wins
+            $homeRecord = (int) $g['home_wins'];
+            $awayRecord = (int) $g['away_wins'];
+            if ($hs > $as && $homeRecord < $awayRecord) {
+                $diff = $awayRecord - $homeRecord;
+                if ($diff > $upsetDiff) {
+                    $upsetDiff = $diff;
+                    $upsetGame = $g;
+                }
+            } elseif ($as > $hs && $awayRecord < $homeRecord) {
+                $diff = $homeRecord - $awayRecord;
+                if ($diff > $upsetDiff) {
+                    $upsetDiff = $diff;
+                    $upsetGame = $g;
+                }
+            }
+        }
+
+        // BIGGEST WIN
+        if ($biggestGame) {
+            $hs = (int) $biggestGame['home_score'];
+            $as = (int) $biggestGame['away_score'];
+            $winnerName = $hs > $as
+                ? $biggestGame['home_city'] . ' ' . $biggestGame['home_name']
+                : $biggestGame['away_city'] . ' ' . $biggestGame['away_name'];
+            $loserAbbr = $hs > $as ? $biggestGame['away_abbr'] : $biggestGame['home_abbr'];
+            $winScore = max($hs, $as);
+            $loseScore = min($hs, $as);
+            $sections[] = "BIGGEST WIN: The {$winnerName} demolished {$loserAbbr} {$winScore}-{$loseScore}. A {$biggestMargin}-point margin that left no doubt about who the better team was today.";
+        }
+
+        // UPSET OF THE WEEK
+        if ($upsetGame) {
+            $hs = (int) $upsetGame['home_score'];
+            $as = (int) $upsetGame['away_score'];
+            $upsetWinner = $hs > $as
+                ? $upsetGame['home_city'] . ' ' . $upsetGame['home_name']
+                : $upsetGame['away_city'] . ' ' . $upsetGame['away_name'];
+            $upsetLoser = $hs > $as
+                ? $upsetGame['away_city'] . ' ' . $upsetGame['away_name']
+                : $upsetGame['home_city'] . ' ' . $upsetGame['home_name'];
+            $sections[] = "UPSET OF THE WEEK: The {$upsetWinner} knocked off the {$upsetLoser}, " . max($hs, $as) . "-" . min($hs, $as) . ". Nobody saw this one coming.";
+        }
+
+        // GAME OF THE WEEK
+        if ($closestGame && $closestGame !== $biggestGame) {
+            $hs = (int) $closestGame['home_score'];
+            $as = (int) $closestGame['away_score'];
+            $sections[] = "GAME OF THE WEEK: {$closestGame['home_city']} {$closestGame['home_name']} vs {$closestGame['away_city']} {$closestGame['away_name']} — a {$hs}-{$as} nail-biter that came down to the final minutes.";
+        }
+
+        // BY THE NUMBERS
+        $statLines = [];
+        foreach (array_slice($games, 0, 3) as $g) {
+            $box = json_decode($g['box_score'] ?? '{}', true);
+            $homeStats = $box['home']['stats'] ?? [];
+            $awayStats = $box['away']['stats'] ?? [];
+            $allStats = array_merge($homeStats, $awayStats);
+
+            foreach ($allStats as $pid => $s) {
+                if (((int) ($s['pass_yards'] ?? 0)) >= 300) {
+                    $abbr = ((int) $s['team_id'] === (int) $g['home_team_id']) ? $g['home_abbr'] : $g['away_abbr'];
+                    $statLines[] = "{$abbr} QB: " . $s['pass_yards'] . " pass yards, " . ($s['pass_tds'] ?? 0) . " TDs";
+                }
+                if (((int) ($s['rush_yards'] ?? 0)) >= 100) {
+                    $abbr = ((int) $s['team_id'] === (int) $g['home_team_id']) ? $g['home_abbr'] : $g['away_abbr'];
+                    $statLines[] = "{$abbr} RB: " . $s['rush_yards'] . " rush yards, " . ($s['rush_tds'] ?? 0) . " TDs";
+                }
+            }
+        }
+        if (!empty($statLines)) {
+            $sections[] = "BY THE NUMBERS:\n- " . implode("\n- ", array_slice($statLines, 0, 3));
+        }
+
+        // LOOKING AHEAD
+        $nextWeek = $week + 1;
+        $sections[] = "LOOKING AHEAD: Week {$nextWeek} is just around the corner. Expect the stakes to keep climbing as the season marches on.";
+
+        // Build headline
+        $catchySummaries = [
+            'Upsets, Blowouts, and Drama',
+            'The Good, the Bad, and the Ugly',
+            'Winners, Losers, and Everything In Between',
+            'Shakeups Across the League',
+            'Statement Wins and Stunning Upsets',
+        ];
+        $catchySummary = $this->pickOne($catchySummaries);
+        $headline = "Morning Blitz: Week {$week} — {$catchySummary}";
+
+        $body = implode("\n\n", $sections);
+        $now = date('Y-m-d H:i:s');
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, 'morning_blitz', ?, ?, 'HC26 Staff', 'staff', NULL, NULL, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, $week,
+            $headline, $body,
+            $now,
+        ]);
+    }
+
+    // ─── Feature Story ───────────────────────────────────────────────
+
+    /**
+     * Generate a feature article at key moments in the season.
+     *
+     * Supported topics: midseason_report, playoff_race, trade_deadline,
+     * offseason_preview, rookie_watch.
+     */
+    public function generateFeatureStory(int $leagueId, int $seasonId, int $week, string $topic, array $context): void
+    {
+        $teams = $this->db->prepare("SELECT * FROM teams WHERE league_id = ? ORDER BY wins DESC");
+        $teams->execute([$leagueId]);
+        $teams = $teams->fetchAll();
+
+        if (empty($teams)) return;
+
+        $paragraphs = [];
+        $headline = '';
+        $authorName = '';
+        $authorPersona = '';
+        $teamId = $context['team_id'] ?? null;
+
+        switch ($topic) {
+            case 'midseason_report':
+                $authorName = 'Dana Reeves';
+                $authorPersona = 'dana_reeves';
+                $headline = "Midseason Report Card: Grading Every Team at the Halfway Mark";
+
+                $paragraphs[] = "We have reached the midpoint of the season, and it is time to take stock. Who has exceeded expectations? Who has disappointed? And who is poised for a second-half surge?";
+
+                // Grade top teams
+                $gradeLabels = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'F'];
+                $totalTeams = count($teams);
+                foreach ($teams as $i => $t) {
+                    $pct = $totalTeams > 1 ? $i / ($totalTeams - 1) : 0;
+                    $gradeIdx = min((int) ($pct * count($gradeLabels)), count($gradeLabels) - 1);
+                    $grade = $gradeLabels[$gradeIdx];
+                    $name = $t['city'] . ' ' . $t['name'];
+                    $record = $t['wins'] . '-' . $t['losses'];
+
+                    if ($i < 3) {
+                        $paragraphs[] = "{$name} ({$record}) — Grade: {$grade}. One of the clear frontrunners at the midway point. The consistency has been impressive, and they have the look of a team built for the long haul.";
+                    } elseif ($i >= $totalTeams - 3) {
+                        $paragraphs[] = "{$name} ({$record}) — Grade: {$grade}. A difficult first half. The second half is about development, evaluation, and positioning for the future.";
+                    }
+                }
+
+                $paragraphs[] = "The second half of the season is where legacies are made. Expect the cream to rise — and the pretenders to fade.";
+                break;
+
+            case 'playoff_race':
+                $authorName = 'Marcus Bell';
+                $authorPersona = 'marcus_bell';
+                $headline = "The Playoff Picture: Who's In, Who's Out, Who's on the Bubble";
+
+                $paragraphs[] = $this->pickOne(self::COLUMNISTS['marcus_bell']['phrases']['lede']);
+
+                // In contention (top half), on the bubble (middle), eliminated (bottom)
+                $totalTeams = count($teams);
+                $playoffSpots = max(4, (int) ceil($totalTeams * 0.4));
+
+                $inTeams = array_slice($teams, 0, $playoffSpots);
+                $bubbleTeams = array_slice($teams, $playoffSpots, 3);
+                $outTeams = array_slice($teams, $playoffSpots + 3);
+
+                $inNames = [];
+                foreach ($inTeams as $t) {
+                    $inNames[] = $t['abbreviation'] . ' (' . $t['wins'] . '-' . $t['losses'] . ')';
+                }
+                $paragraphs[] = "IN: " . implode(', ', $inNames) . ". These teams control their own destiny. Win and they are in. It is that simple — though nothing in this league ever truly is.";
+
+                if (!empty($bubbleTeams)) {
+                    $bubbleNames = [];
+                    foreach ($bubbleTeams as $t) {
+                        $bubbleNames[] = $t['city'] . ' ' . $t['name'] . ' (' . $t['wins'] . '-' . $t['losses'] . ')';
+                    }
+                    $paragraphs[] = "ON THE BUBBLE: " . implode(', ', $bubbleNames) . ". This is where it gets agonizing. One game could be the difference between January football and January vacation. Every snap matters.";
+                }
+
+                if (!empty($outTeams)) {
+                    $outNames = [];
+                    foreach (array_slice($outTeams, 0, 4) as $t) {
+                        $outNames[] = $t['abbreviation'];
+                    }
+                    $paragraphs[] = "FADING FAST: " . implode(', ', $outNames) . ". The math is getting ugly. They would need a miracle run and a lot of help to sneak in.";
+                }
+
+                $paragraphs[] = $this->pickOne(self::COLUMNISTS['marcus_bell']['phrases']['emotion']);
+                $paragraphs[] = "This is December football. This is when it all means something. Strap in.";
+                break;
+
+            case 'trade_deadline':
+                $authorName = 'Dana Reeves';
+                $authorPersona = 'dana_reeves';
+                $headline = "Trade Deadline Preview: Buyers, Sellers, and the Deals That Could Reshape the League";
+
+                $paragraphs[] = $this->pickOne(self::COLUMNISTS['dana_reeves']['phrases']['lede']);
+
+                $buyers = array_slice($teams, 0, (int) ceil(count($teams) * 0.3));
+                $sellers = array_slice($teams, -(int) ceil(count($teams) * 0.3));
+
+                $buyerNames = [];
+                foreach ($buyers as $t) {
+                    $buyerNames[] = $t['city'] . ' ' . $t['name'];
+                }
+                $paragraphs[] = "BUYERS: " . implode(', ', $buyerNames) . ". These teams are in win-now mode. Expect them to be aggressive in pursuing upgrades at key positions. The cost of a rental is steep, but so is the cost of a missed opportunity.";
+
+                $sellerNames = [];
+                foreach ($sellers as $t) {
+                    $sellerNames[] = $t['city'] . ' ' . $t['name'];
+                }
+                $paragraphs[] = "SELLERS: " . implode(', ', $sellerNames) . ". The smart play here is to stockpile assets for the future. Draft picks and young players are the currency of rebuilding, and these teams should be open for business.";
+
+                $paragraphs[] = "The best trades are the ones that help both sides. A contender gets the missing piece; a rebuilder gets the draft capital to accelerate their timeline. That is how franchises are built.";
+                $paragraphs[] = "Keep your phone charged. The next 48 hours could change everything.";
+                break;
+
+            case 'offseason_preview':
+                $authorName = 'Dana Reeves';
+                $authorPersona = 'dana_reeves';
+                $headline = "Offseason Preview: What Every Team Needs This Offseason";
+
+                $paragraphs[] = "The season is over, and the real work begins. For some teams, this offseason is about fine-tuning a contender. For others, it is about tearing it down and starting fresh.";
+
+                foreach (array_slice($teams, 0, 5) as $t) {
+                    $name = $t['city'] . ' ' . $t['name'];
+                    $record = $t['wins'] . '-' . $t['losses'];
+                    $pf = (int) $t['points_for'];
+                    $pa = (int) $t['points_against'];
+                    $diff = $pf - $pa;
+                    $diffStr = $diff >= 0 ? "+{$diff}" : (string) $diff;
+                    $paragraphs[] = "{$name} ({$record}, {$diffStr} point differential): A strong season, but there are always areas to improve. The offseason priority should be reinforcing depth and addressing any weaknesses exposed in the playoffs.";
+                }
+
+                foreach (array_slice($teams, -3) as $t) {
+                    $name = $t['city'] . ' ' . $t['name'];
+                    $record = $t['wins'] . '-' . $t['losses'];
+                    $paragraphs[] = "{$name} ({$record}): A long offseason ahead. The draft will be critical, and cap space needs to be spent wisely. Patience is the name of the game.";
+                }
+
+                $paragraphs[] = "The offseason is where championships are won. The teams that make the smartest moves now will be the ones celebrating next February.";
+                break;
+
+            case 'rookie_watch':
+                $authorName = 'Marcus Bell';
+                $authorPersona = 'marcus_bell';
+                $headline = "Rookie Watch: How This Year's Class Is Performing Through Week {$week}";
+
+                $paragraphs[] = $this->pickOne(self::COLUMNISTS['marcus_bell']['phrases']['lede']);
+                $paragraphs[] = "Every draft class has its stars, its surprises, and its disappointments. Through {$week} weeks, here is where things stand with the newest crop of talent.";
+
+                // Fetch rookies with stats
+                $rookieStmt = $this->db->prepare(
+                    "SELECT p.id, p.first_name, p.last_name, p.position, p.overall_rating, p.team_id, t.abbreviation,
+                            SUM(gs.pass_yards) as total_pass_yards, SUM(gs.rush_yards) as total_rush_yards,
+                            SUM(gs.rec_yards) as total_rec_yards, SUM(gs.pass_tds) as total_pass_tds,
+                            SUM(gs.rush_tds) as total_rush_tds, SUM(gs.rec_tds) as total_rec_tds,
+                            SUM(gs.tackles) as total_tackles, SUM(gs.sacks) as total_sacks,
+                            SUM(gs.interceptions_def) as total_ints
+                     FROM players p
+                     JOIN teams t ON p.team_id = t.id
+                     LEFT JOIN game_stats gs ON gs.player_id = p.id
+                     WHERE p.team_id IN (SELECT id FROM teams WHERE league_id = ?)
+                       AND p.experience = 0
+                     GROUP BY p.id
+                     ORDER BY p.overall_rating DESC
+                     LIMIT 10"
+                );
+                $rookieStmt->execute([$leagueId]);
+                $rookies = $rookieStmt->fetchAll();
+
+                if (!empty($rookies)) {
+                    $spotlightCount = 0;
+                    foreach ($rookies as $r) {
+                        $rName = $r['first_name'] . ' ' . $r['last_name'];
+                        $abbr = $r['abbreviation'] ?? '???';
+                        $pos = $r['position'];
+                        $ovr = (int) $r['overall_rating'];
+
+                        $statLine = '';
+                        if (in_array($pos, ['QB'])) {
+                            $statLine = ((int) $r['total_pass_yards']) . " pass yards, " . ((int) $r['total_pass_tds']) . " TDs";
+                        } elseif (in_array($pos, ['RB'])) {
+                            $statLine = ((int) $r['total_rush_yards']) . " rush yards, " . ((int) $r['total_rush_tds']) . " TDs";
+                        } elseif (in_array($pos, ['WR', 'TE'])) {
+                            $statLine = ((int) $r['total_rec_yards']) . " rec yards, " . ((int) $r['total_rec_tds']) . " TDs";
+                        } elseif (in_array($pos, ['DE', 'DT', 'LB'])) {
+                            $statLine = ((int) $r['total_tackles']) . " tackles, " . ((int) $r['total_sacks']) . " sacks";
+                        } elseif (in_array($pos, ['CB', 'S'])) {
+                            $statLine = ((int) $r['total_tackles']) . " tackles, " . ((int) $r['total_ints']) . " INTs";
+                        }
+
+                        if ($spotlightCount < 5) {
+                            $paragraphs[] = "{$rName}, {$pos}, {$abbr} ({$ovr} OVR): {$statLine}. " . ($spotlightCount === 0
+                                ? "The early frontrunner for Rookie of the Year honors. This kid is the real deal."
+                                : "Making an impact from day one. Exactly what you want to see from a young player.");
+                            $spotlightCount++;
+                        }
+                    }
+                } else {
+                    $paragraphs[] = "It has been a quiet start for this year's rookie class, but there is still plenty of season left. The second half is where rookies often find their footing.";
+                }
+
+                $paragraphs[] = $this->pickOne(self::COLUMNISTS['marcus_bell']['phrases']['hero']);
+                $paragraphs[] = "The best is yet to come for this class. Keep watching.";
+                break;
+
+            default:
+                $authorName = 'Dana Reeves';
+                $authorPersona = 'dana_reeves';
+                $headline = "Week {$week} League Analysis: Trends, Takeaways, and What to Watch";
+
+                $paragraphs[] = $this->pickOne(self::COLUMNISTS['dana_reeves']['phrases']['lede']);
+                $paragraphs[] = "Through {$week} weeks of play, the league landscape is taking shape. The contenders are separating from the pretenders, and the data is starting to tell a clear story.";
+
+                $bestTeam = $teams[0];
+                $worstTeam = end($teams);
+                $paragraphs[] = "At the top, the {$bestTeam['city']} {$bestTeam['name']} ({$bestTeam['wins']}-{$bestTeam['losses']}) continue to set the pace. At the bottom, the {$worstTeam['city']} {$worstTeam['name']} ({$worstTeam['wins']}-{$worstTeam['losses']}) are looking ahead to next year.";
+
+                $paragraphs[] = $this->pickOne(self::COLUMNISTS['dana_reeves']['phrases']['analysis'] ?? ['The metrics support the standings.']);
+                $paragraphs[] = "The next few weeks will be critical for every team. Expect movement in the standings and some surprises along the way.";
+                break;
+        }
+
+        $body = implode("\n\n", $paragraphs);
+        $now = date('Y-m-d H:i:s');
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO articles (league_id, season_id, week, type, headline, body, author_name, author_persona, team_id, game_id, is_ai_generated, published_at)
+             VALUES (?, ?, ?, 'feature', ?, ?, ?, ?, ?, NULL, 0, ?)"
+        );
+        $stmt->execute([
+            $leagueId, $seasonId, $week,
+            $headline, $body,
+            $authorName, $authorPersona,
+            $teamId,
+            $now,
+        ]);
+    }
 }

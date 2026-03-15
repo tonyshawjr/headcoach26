@@ -590,6 +590,16 @@ class DraftController
 
             $engine = new \App\Services\NarrativeEngine();
             $engine->generateDraftCoverage($leagueId, $seasonId, $allPicks);
+
+            // Draft scout coverage — both writers react to picks
+            if (class_exists('App\\Services\\DraftScoutEngine')) {
+                try {
+                    $scout = new \App\Services\DraftScoutEngine();
+                    $scout->generateDraftDayNarrative($leagueId, $seasonId, $allPicks);
+                } catch (\Throwable $e) {
+                    error_log("DraftScout draft day error: " . $e->getMessage());
+                }
+            }
         } catch (\Throwable $e) {
             error_log("NarrativeEngine draft coverage error: " . $e->getMessage());
         }

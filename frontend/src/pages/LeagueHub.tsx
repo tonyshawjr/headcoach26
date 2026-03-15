@@ -6,7 +6,7 @@ import { SocialPostCard } from '@/components/cards/SocialPostCard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TeamBadge } from '@/components/TeamBadge';
-import { Newspaper } from 'lucide-react';
+import { Newspaper, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   PageLayout,
   PageHeader,
@@ -33,24 +33,44 @@ const tabs: { key: TabValue; label: string }[] = [
 
 export default function LeagueHub() {
   const league = useAuthStore((s) => s.league);
-  const [articlePage, setArticlePage] = useState(1);
   const [activeTab, setActiveTab] = useState<TabValue>('news');
 
-  const { data: articlesResp, isLoading: articlesLoading, isError: articlesError } = useArticles(league?.id, { page: articlePage });
+  // Pagination for All News
+  const [newsPage, setNewsPage] = useState(1);
+
+  // Week selector for Recaps
+  const currentWeek = league?.current_week ?? 1;
+  const [recapWeek, setRecapWeek] = useState(currentWeek);
+
+  // Pagination for filtered tabs
+  const [featurePage, setFeaturePage] = useState(1);
+  const [columnPage, setColumnPage] = useState(1);
+  const [blitzPage, setBlitzPage] = useState(1);
+
+  // API calls — use server-side type/week filtering
+  const { data: allNewsResp, isLoading: newsLoading, isError: newsError } = useArticles(league?.id, { page: newsPage });
+  const { data: recapsResp, isLoading: recapsLoading } = useArticles(league?.id, { type: 'game_recap', week: recapWeek, page: 1 });
+  const { data: featuresResp, isLoading: featuresLoading } = useArticles(league?.id, { type: 'feature', page: featurePage });
+  const { data: columnsResp, isLoading: columnsLoading } = useArticles(league?.id, { type: 'column', page: columnPage });
+  const { data: blitzResp, isLoading: blitzLoading } = useArticles(league?.id, { type: 'morning_blitz', page: blitzPage });
   const { data: social, isLoading: socialLoading } = useSocial(league?.id);
   const { data: rankings } = usePowerRankings(league?.id);
 
-  const articles = articlesResp?.articles ?? [];
+  const allNews = allNewsResp?.articles ?? [];
+  const recaps = recapsResp?.articles ?? [];
+  const features = featuresResp?.articles ?? [];
+  const columns = columnsResp?.articles ?? [];
+  const blitz = blitzResp?.articles ?? [];
 
-  function filteredArticles(type: string) {
-    return articles.filter((a) => a.type === type);
-  }
-
-  const statusText = articlesLoading
+  const statusText = newsLoading
     ? 'Loading articles...'
-    : articlesError
+    : newsError
       ? 'Error loading articles'
-      : `${articles.length} articles loaded`;
+      : `${allNewsResp?.total ?? 0} articles`;
+
+  // Week navigation for recaps
+  const canGoPrevWeek = recapWeek > 1;
+  const canGoNextWeek = recapWeek < currentWeek;
 
   return (
     <PageLayout>
@@ -68,30 +88,13 @@ export default function LeagueHub() {
       />
 
       <div className="mt-6">
-        {/* Loading state for article tabs */}
-        {activeTab !== 'social' && activeTab !== 'rankings' && articlesLoading && (
-          <Section title="Loading">
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <Card key={i} className="border-[var(--border)] bg-[var(--bg-surface)] p-4">
-                  <div className="animate-pulse space-y-2">
-                    <div className="h-3 w-20 rounded bg-[var(--bg-elevated)]" />
-                    <div className="h-5 w-3/4 rounded bg-[var(--bg-elevated)]" />
-                    <div className="h-3 w-full rounded bg-[var(--bg-elevated)]" />
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </Section>
-        )}
-        {activeTab === 'social' && socialLoading && (
-          <p className="text-sm text-[var(--text-secondary)]">Loading social posts...</p>
-        )}
 
-        {/* All News */}
-        {activeTab === 'news' && !articlesLoading && (
+        {/* ═══ All News ═══ */}
+        {activeTab === 'news' && (
           <Section title="All News" delay={0.05}>
-            {articles.length === 0 ? (
+            {newsLoading ? (
+              <LoadingSkeleton />
+            ) : allNews.length === 0 ? (
               <EmptyBlock
                 icon={Newspaper}
                 title="No articles yet"
@@ -102,15 +105,14 @@ export default function LeagueHub() {
               <ContentGrid layout="main-sidebar">
                 <MainColumn>
                   <div className="space-y-3">
-                    {articles.map((a) => <ArticleCard key={a.id} article={a} />)}
+                    {allNews.map((a) => <ArticleCard key={a.id} article={a} />)}
                   </div>
-                  {articlesResp && articlesResp.pages > 1 && (
-                    <div className="flex justify-center gap-2">
-                      <Button size="sm" variant="outline" disabled={articlePage <= 1} onClick={() => setArticlePage((p) => p - 1)}>Prev</Button>
-                      <span className="text-sm text-[var(--text-secondary)] self-center">Page {articlePage} of {articlesResp.pages}</span>
-                      <Button size="sm" variant="outline" disabled={articlePage >= articlesResp.pages} onClick={() => setArticlePage((p) => p + 1)}>Next</Button>
-                    </div>
-                  )}
+                  <Pagination
+                    page={newsPage}
+                    totalPages={allNewsResp?.pages ?? 1}
+                    onPrev={() => setNewsPage((p) => p - 1)}
+                    onNext={() => setNewsPage((p) => p + 1)}
+                  />
                 </MainColumn>
                 <SidebarColumn>
                   {rankings && rankings.length > 0 && (
@@ -140,62 +142,141 @@ export default function LeagueHub() {
           </Section>
         )}
 
-        {/* Recaps */}
-        {activeTab === 'recaps' && !articlesLoading && (
+        {/* ═══ Recaps — with week selector ═══ */}
+        {activeTab === 'recaps' && (
           <Section title="Game Recaps" delay={0.05}>
-            {filteredArticles('game_recap').length === 0 ? (
-              <EmptyBlock icon={Newspaper} title="No game recaps yet" description="Recaps are generated after games are simulated." />
+            {/* Week selector */}
+            <div className="flex items-center justify-center gap-4 mb-6">
+              <button
+                onClick={() => setRecapWeek((w) => w - 1)}
+                disabled={!canGoPrevWeek}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="text-center min-w-[120px]">
+                <p className="text-sm font-bold text-[var(--text-primary)]">Week {recapWeek}</p>
+                <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
+                  {recapWeek === currentWeek ? 'Current Week' : recapWeek < currentWeek ? 'Past' : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setRecapWeek((w) => w + 1)}
+                disabled={!canGoNextWeek}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 transition-colors"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Week quick-jump pills */}
+            <div className="flex flex-wrap justify-center gap-1.5 mb-6">
+              {Array.from({ length: Math.min(currentWeek, 18) }, (_, i) => i + 1).map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setRecapWeek(w)}
+                  className={`h-7 min-w-[32px] rounded px-2 text-[11px] font-semibold transition-colors ${
+                    w === recapWeek
+                      ? 'bg-[var(--accent-blue)] text-white'
+                      : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  {w}
+                </button>
+              ))}
+            </div>
+
+            {recapsLoading ? (
+              <LoadingSkeleton />
+            ) : recaps.length === 0 ? (
+              <EmptyBlock
+                icon={Newspaper}
+                title={`No recaps for Week ${recapWeek}`}
+                description="Recaps are generated after games are simulated."
+              />
             ) : (
               <div className="space-y-3">
-                {filteredArticles('game_recap').map((a) => <ArticleCard key={a.id} article={a} />)}
+                {recaps.map((a) => <ArticleCard key={a.id} article={a} />)}
               </div>
             )}
           </Section>
         )}
 
-        {/* Features */}
-        {activeTab === 'features' && !articlesLoading && (
+        {/* ═══ Features ═══ */}
+        {activeTab === 'features' && (
           <Section title="Features" delay={0.05}>
-            {filteredArticles('feature').length === 0 ? (
-              <EmptyBlock icon={Newspaper} title="No feature articles yet" description="Feature stories appear as the season progresses." />
+            {featuresLoading ? (
+              <LoadingSkeleton />
+            ) : features.length === 0 ? (
+              <EmptyBlock icon={Newspaper} title="No feature articles yet" description="Feature stories appear as the season progresses — midseason reports, playoff previews, draft prospect profiles, and more." />
             ) : (
-              <div className="space-y-3">
-                {filteredArticles('feature').map((a) => <ArticleCard key={a.id} article={a} />)}
-              </div>
+              <>
+                <div className="space-y-3">
+                  {features.map((a) => <ArticleCard key={a.id} article={a} />)}
+                </div>
+                <Pagination
+                  page={featurePage}
+                  totalPages={featuresResp?.pages ?? 1}
+                  onPrev={() => setFeaturePage((p) => p - 1)}
+                  onNext={() => setFeaturePage((p) => p + 1)}
+                />
+              </>
             )}
           </Section>
         )}
 
-        {/* Columns */}
-        {activeTab === 'columns' && !articlesLoading && (
+        {/* ═══ Columns ═══ */}
+        {activeTab === 'columns' && (
           <Section title="Columns" delay={0.05}>
-            {filteredArticles('column').length === 0 ? (
-              <EmptyBlock icon={Newspaper} title="No columns yet" description="Columnist opinions appear as the season progresses." />
+            {columnsLoading ? (
+              <LoadingSkeleton />
+            ) : columns.length === 0 ? (
+              <EmptyBlock icon={Newspaper} title="No columns yet" description="Weekly opinion columns from Terry Hollis, Dana Reeves, and Marcus Bell appear as the season progresses." />
             ) : (
-              <div className="space-y-3">
-                {filteredArticles('column').map((a) => <ArticleCard key={a.id} article={a} />)}
-              </div>
+              <>
+                <div className="space-y-3">
+                  {columns.map((a) => <ArticleCard key={a.id} article={a} />)}
+                </div>
+                <Pagination
+                  page={columnPage}
+                  totalPages={columnsResp?.pages ?? 1}
+                  onPrev={() => setColumnPage((p) => p - 1)}
+                  onNext={() => setColumnPage((p) => p + 1)}
+                />
+              </>
             )}
           </Section>
         )}
 
-        {/* Morning Blitz */}
-        {activeTab === 'morning_blitz' && !articlesLoading && (
+        {/* ═══ Morning Blitz ═══ */}
+        {activeTab === 'morning_blitz' && (
           <Section title="Morning Blitz" delay={0.05}>
-            {filteredArticles('morning_blitz').length === 0 ? (
-              <EmptyBlock icon={Newspaper} title="No Morning Blitz yet" description="Morning Blitz shows appear as the season progresses." />
+            {blitzLoading ? (
+              <LoadingSkeleton />
+            ) : blitz.length === 0 ? (
+              <EmptyBlock icon={Newspaper} title="No Morning Blitz yet" description="Weekly roundups covering the biggest wins, upsets, and storylines across the league." />
             ) : (
-              <div className="space-y-3">
-                {filteredArticles('morning_blitz').map((a) => <ArticleCard key={a.id} article={a} />)}
-              </div>
+              <>
+                <div className="space-y-3">
+                  {blitz.map((a) => <ArticleCard key={a.id} article={a} />)}
+                </div>
+                <Pagination
+                  page={blitzPage}
+                  totalPages={blitzResp?.pages ?? 1}
+                  onPrev={() => setBlitzPage((p) => p - 1)}
+                  onNext={() => setBlitzPage((p) => p + 1)}
+                />
+              </>
             )}
           </Section>
         )}
 
-        {/* Social / GridironX */}
-        {activeTab === 'social' && !socialLoading && (
+        {/* ═══ GridironX (Social) ═══ */}
+        {activeTab === 'social' && (
           <Section title="GridironX" delay={0.05}>
-            {(!social || social.length === 0) ? (
+            {socialLoading ? (
+              <p className="text-sm text-[var(--text-secondary)]">Loading social posts...</p>
+            ) : (!social || social.length === 0) ? (
               <EmptyBlock icon={Newspaper} title="No posts yet" description="GridironX posts appear as games are played." />
             ) : (
               <div className="space-y-3">
@@ -205,7 +286,7 @@ export default function LeagueHub() {
           </Section>
         )}
 
-        {/* Power Rankings */}
+        {/* ═══ Power Rankings ═══ */}
         {activeTab === 'rankings' && (
           <Section title="Power Rankings" delay={0.05}>
             {rankings && rankings.length > 0 ? (
@@ -245,5 +326,34 @@ export default function LeagueHub() {
         )}
       </div>
     </PageLayout>
+  );
+}
+
+/* ── Shared Components ─────────────────────────────── */
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-3">
+      {[1, 2, 3].map((i) => (
+        <Card key={i} className="border-[var(--border)] bg-[var(--bg-surface)] p-4">
+          <div className="animate-pulse space-y-2">
+            <div className="h-3 w-20 rounded bg-[var(--bg-elevated)]" />
+            <div className="h-5 w-3/4 rounded bg-[var(--bg-elevated)]" />
+            <div className="h-3 w-full rounded bg-[var(--bg-elevated)]" />
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function Pagination({ page, totalPages, onPrev, onNext }: { page: number; totalPages: number; onPrev: () => void; onNext: () => void }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex justify-center gap-2 mt-4">
+      <Button size="sm" variant="outline" disabled={page <= 1} onClick={onPrev}>Prev</Button>
+      <span className="text-sm text-[var(--text-secondary)] self-center">Page {page} of {totalPages}</span>
+      <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={onNext}>Next</Button>
+    </div>
   );
 }

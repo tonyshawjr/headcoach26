@@ -406,6 +406,34 @@ class SimulationController
 
             // Generate weekly summary content (power rankings, etc.)
             $engine->generateWeeklyContent($leagueId, $seasonId, $week);
+
+            // Weekly column and morning blitz
+            try {
+                $engine->generateWeeklyColumn($leagueId, $seasonId, $week);
+            } catch (\Throwable $e) {
+                error_log("Column generation error: " . $e->getMessage());
+            }
+
+            try {
+                $engine->generateMorningBlitz($leagueId, $seasonId, $week);
+            } catch (\Throwable $e) {
+                error_log("Morning Blitz error: " . $e->getMessage());
+            }
+
+            // Feature stories at key moments
+            try {
+                if ($week == 9 || $week == 10) {
+                    $engine->generateFeatureStory($leagueId, $seasonId, $week, 'midseason_report', []);
+                }
+                if ($week >= 14 && $week <= 17) {
+                    $engine->generateFeatureStory($leagueId, $seasonId, $week, 'playoff_race', []);
+                }
+                if ($week == 4 || $week == 8 || $week == 12) {
+                    $engine->generateFeatureStory($leagueId, $seasonId, $week, 'rookie_watch', []);
+                }
+            } catch (\Throwable $e) {
+                error_log("Feature story error: " . $e->getMessage());
+            }
         } catch (\Throwable $e) {
             // Narrative generation is non-critical; log but do not fail
             error_log("NarrativeEngine error: " . $e->getMessage());

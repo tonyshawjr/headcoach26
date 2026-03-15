@@ -33,7 +33,7 @@ export default function BoxScore() {
         {/* Week / Game info bar */}
         <div className="bg-[var(--bg-elevated)] px-4 py-2 text-center">
           <span className="text-xs font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">
-            {game.game_type === 'playoff' ? 'Playoff Game' : `Week ${game.week}`}
+            {game.week > 18 ? ({'wild_card':'Wild Card Weekend','divisional':'Divisional Round','conference_championship':'Conference Championship','big_game':'The Big Game'}[game.game_type] ?? `Week ${game.week}`) : `Week ${game.week}`}
             {game.weather && game.weather !== 'clear' && game.weather !== 'dome' ? ` · ${game.weather}` : ''}
             {' · '}Final
           </span>

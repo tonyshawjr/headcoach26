@@ -434,6 +434,40 @@ class LeaguesController
                     return;
                 }
 
+                // Generate weekly draft scout coverage during offseason
+                if (class_exists('App\\Services\\DraftScoutEngine')) {
+                    try {
+                        $db = \App\Database\Connection::getInstance()->getPdo();
+                        $draftClassStmt = $db->prepare(
+                            "SELECT id FROM draft_classes WHERE league_id = ? ORDER BY year DESC LIMIT 1"
+                        );
+                        $draftClassStmt->execute([(int) $params['id']]);
+                        $draftClassRow = $draftClassStmt->fetch();
+                        if ($draftClassRow) {
+                            $seasonStmt = $db->prepare(
+                                "SELECT id FROM seasons WHERE league_id = ? AND is_current = 1 LIMIT 1"
+                            );
+                            $seasonStmt->execute([(int) $params['id']]);
+                            $seasonRow = $seasonStmt->fetch();
+                            $offseasonSeasonId = $seasonRow ? (int) $seasonRow['id'] : 0;
+
+                            $leagueStmt = $db->prepare("SELECT current_week FROM leagues WHERE id = ?");
+                            $leagueStmt->execute([(int) $params['id']]);
+                            $offseasonWeek = (int) ($leagueStmt->fetchColumn() ?: 0);
+
+                            $draftScout = new \App\Services\DraftScoutEngine();
+                            $draftScout->generateWeeklyDraftUpdate(
+                                (int) $params['id'],
+                                $offseasonSeasonId,
+                                $offseasonWeek,
+                                (int) $draftClassRow['id']
+                            );
+                        }
+                    } catch (\Throwable $e) {
+                        error_log("DraftScout weekly error: " . $e->getMessage());
+                    }
+                }
+
                 // Still in offseason -- return phase results without changing phase/week
                 $updated = $this->league->find((int) $params['id']);
                 $updated['settings'] = json_decode($updated['settings'] ?? '{}', true);

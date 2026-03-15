@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useSchedule } from '@/hooks/useApi';
 import { useAuthStore } from '@/stores/authStore';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { weekLabelShort } from '@/lib/weekLabel';
 
 interface GameTeam {
   abbreviation?: string;
@@ -51,7 +52,7 @@ export function ScoreStrip() {
         {/* Week label */}
         <div className="hidden shrink-0 border-r border-white/10 px-4 py-2 sm:block">
           <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
-            {league?.phase === 'regular' ? `Week ${currentWeek}` : league?.phase}
+            {weekLabelShort(currentWeek, league?.phase)}
           </span>
         </div>
 

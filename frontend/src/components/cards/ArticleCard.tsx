@@ -4,10 +4,16 @@ import type { Article } from '@/api/client';
 
 const typeConfig: Record<string, { label: string; color: string }> = {
   game_recap: { label: 'RECAP', color: 'var(--accent-blue)' },
+  playoff_recap: { label: 'PLAYOFFS', color: 'var(--accent-red)' },
   power_rankings: { label: 'RANKINGS', color: 'var(--accent-gold)' },
   feature: { label: 'FEATURE', color: 'var(--accent-red)' },
   column: { label: 'COLUMN', color: '#8b5cf6' },
   morning_blitz: { label: 'BLITZ', color: 'var(--accent-gold)' },
+  draft_coverage: { label: 'DRAFT', color: '#10b981' },
+  trade_story: { label: 'TRADE', color: '#f97316' },
+  free_agency: { label: 'FREE AGENCY', color: '#06b6d4' },
+  awards: { label: 'AWARDS', color: 'var(--accent-gold)' },
+  milestone: { label: 'MILESTONE', color: '#8b5cf6' },
 };
 
 export function ArticleCard({ article }: { article: Article }) {

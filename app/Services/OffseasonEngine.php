@@ -71,6 +71,16 @@ class OffseasonEngine
             $stmt = $this->db->prepare("SELECT COUNT(*) FROM draft_prospects WHERE draft_class_id = ?");
             $stmt->execute([$classId]);
             $draftClassSize = (int) $stmt->fetchColumn();
+
+            // Generate pre-draft scout coverage
+            try {
+                if (class_exists('App\\Services\\DraftScoutEngine')) {
+                    $scout = new \App\Services\DraftScoutEngine();
+                    $scout->generatePreDraftCoverage($leagueId, $seasonId, $classId);
+                }
+            } catch (\Throwable $e) {
+                error_log("DraftScout error: " . $e->getMessage());
+            }
         }
 
         // 7. Reset team records for new season

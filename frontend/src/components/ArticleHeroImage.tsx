@@ -83,12 +83,6 @@ export function ArticleHeroImage({ teamId, articleType = 'game_recap', className
         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
       />
 
-      {/* SVG pattern overlay */}
-      <div
-        className="absolute inset-0"
-        style={{ backgroundImage: pattern, backgroundRepeat: 'repeat' }}
-      />
-
       {/* Bottom gradient for text readability */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
     </div>

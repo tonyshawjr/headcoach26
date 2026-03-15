@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import type { Game, Article, StandingsTeam } from '@/api/client';
 import { useCoachingStaff, useDepthChart } from '@/hooks/useApi';
 import { ArticleHeroImage } from '@/components/ArticleHeroImage';
+import { weekLabel, weekLabelShort } from '@/lib/weekLabel';
 
 /* ═══════════════════════════════════════════════════
    Coach's Agenda — slim inline action bar
@@ -99,7 +100,7 @@ function CoachAgenda() {
     );
   } else if (phase === 'regular' || phase === 'playoffs') {
     if (weekSimmed) {
-      message = `Week ${week} complete.${lastResult ? ` ${lastResult}.` : ''} Ready to move on?`;
+      message = `${weekLabel(week, phase)} complete.${lastResult ? ` ${lastResult}.` : ''} Ready to move on?`;
       const nextLabel = phase === 'regular' && week >= 18 ? 'Start Playoffs' : phase === 'playoffs' && week >= 22 ? 'Enter Offseason' : `Go to Week ${week + 1}`;
       actions = (
         <>
@@ -114,7 +115,7 @@ function CoachAgenda() {
         </>
       );
     } else if (myNextGame) {
-      message = `Week ${week} — ${team?.name} vs ${opponentName}`;
+      message = `${weekLabel(week, phase)} — ${team?.name} vs ${opponentName}`;
       actions = (
         <>
           <Link to={`/game-plan/${myNextGame.id}`} className={btnPrimary}>
@@ -128,11 +129,11 @@ function CoachAgenda() {
         </>
       );
     } else {
-      message = `Week ${week} — bye week`;
+      message = `${weekLabel(week, phase)} — bye week`;
       actions = (
         <button onClick={handleSim} disabled={sim.isPending} className={btnSecondary}>
           <Play className="h-4 w-4" />
-          {sim.isPending ? 'Playing...' : `Sim Week ${week}`}
+          {sim.isPending ? 'Playing...' : `Sim ${weekLabelShort(week, phase)}`}
         </button>
       );
     }
@@ -172,26 +173,65 @@ function FeaturedGameCard({ game, label }: { game: Game; label: string }) {
   const home = game.home_team;
   const away = game.away_team;
   const played = game.is_simulated;
+  const awayColor = away?.primary_color ?? '#333';
+  const homeColor = home?.primary_color ?? '#333';
 
   return (
-    <Link to={played ? `/box-score/${game.id}` : `/game-plan/${game.id}`} className="block bg-black/50 hover:bg-black/40 transition-colors px-4 py-3">
-      {/* Label */}
-      <p className="text-[9px] font-bold uppercase tracking-[0.15em] text-white/40 mb-2">{label}</p>
+    <Link to={played ? `/box-score/${game.id}` : `/game-plan/${game.id}`} className="block group">
+      <div className="overflow-hidden rounded-lg m-2">
+        {/* Label bar */}
+        <div className="bg-black/70 px-3 py-1.5">
+          <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-white/50">{label}</span>
+        </div>
 
-      {/* Away team row */}
-      <div className="flex items-center gap-2 mb-1">
-        <TeamBadge abbreviation={away?.abbreviation} primaryColor={away?.primary_color} secondaryColor={away?.secondary_color} size="xs" />
-        <span className="text-sm font-semibold text-white flex-1">{away?.name}</span>
-        <span className="text-xs text-white/50">{away?.wins ?? 0}-{away?.losses ?? 0}</span>
-        {played && <span className="font-stat text-lg font-bold text-white ml-2">{game.away_score}</span>}
-      </div>
+        {/* Team colors split */}
+        <div className="flex" style={{ minHeight: 70 }}>
+          {/* Away side */}
+          <div
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 relative overflow-hidden"
+            style={{ background: `linear-gradient(135deg, ${awayColor}, ${away?.secondary_color ?? awayColor})` }}
+          >
+            <span
+              className="absolute font-display font-black text-white/10 select-none pointer-events-none"
+              style={{ fontSize: '50px', top: '50%', left: '50%', transform: 'translate(-50%,-50%) rotate(-8deg)', lineHeight: 1 }}
+            >
+              {away?.abbreviation}
+            </span>
+            <TeamBadge abbreviation={away?.abbreviation} primaryColor="#fff" secondaryColor={awayColor} size="md" />
+          </div>
 
-      {/* Home team row */}
-      <div className="flex items-center gap-2">
-        <TeamBadge abbreviation={home?.abbreviation} primaryColor={home?.primary_color} secondaryColor={home?.secondary_color} size="xs" />
-        <span className="text-sm font-semibold text-white flex-1">{home?.name}</span>
-        <span className="text-xs text-white/50">{home?.wins ?? 0}-{home?.losses ?? 0}</span>
-        {played && <span className="font-stat text-lg font-bold text-white ml-2">{game.home_score}</span>}
+          {/* Home side */}
+          <div
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 relative overflow-hidden"
+            style={{ background: `linear-gradient(135deg, ${home?.secondary_color ?? homeColor}, ${homeColor})` }}
+          >
+            <span
+              className="absolute font-display font-black text-white/10 select-none pointer-events-none"
+              style={{ fontSize: '50px', top: '50%', left: '50%', transform: 'translate(-50%,-50%) rotate(8deg)', lineHeight: 1 }}
+            >
+              {home?.abbreviation}
+            </span>
+            <TeamBadge abbreviation={home?.abbreviation} primaryColor="#fff" secondaryColor={homeColor} size="md" />
+          </div>
+        </div>
+
+        {/* Info bar */}
+        <div className="bg-black/70 px-3 py-2 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-white">{away?.name} <span className="text-white/40">{away?.wins}-{away?.losses}</span></p>
+            <p className="text-xs font-semibold text-white">{home?.name} <span className="text-white/40">{home?.wins}-{home?.losses}</span></p>
+          </div>
+          {played ? (
+            <div className="text-right">
+              <p className="font-stat text-sm font-bold text-white">{game.away_score}</p>
+              <p className="font-stat text-sm font-bold text-white">{game.home_score}</p>
+            </div>
+          ) : (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">
+              Wk {game.week}
+            </span>
+          )}
+        </div>
       </div>
     </Link>
   );
@@ -199,10 +239,16 @@ function FeaturedGameCard({ game, label }: { game: Game; label: string }) {
 
 const typeConfig: Record<string, { label: string; color: string }> = {
   game_recap: { label: 'RECAP', color: 'var(--accent-blue)' },
+  playoff_recap: { label: 'PLAYOFFS', color: 'var(--accent-red)' },
   power_rankings: { label: 'RANKINGS', color: 'var(--accent-gold)' },
   feature: { label: 'FEATURE', color: 'var(--accent-red)' },
   column: { label: 'COLUMN', color: '#8b5cf6' },
   morning_blitz: { label: 'BLITZ', color: 'var(--accent-gold)' },
+  draft_coverage: { label: 'DRAFT', color: '#10b981' },
+  trade_story: { label: 'TRADE', color: '#f97316' },
+  free_agency: { label: 'FREE AGENCY', color: '#06b6d4' },
+  awards: { label: 'AWARDS', color: 'var(--accent-gold)' },
+  milestone: { label: 'MILESTONE', color: '#8b5cf6' },
 };
 
 /* ═══════════════════════════════════════════════════
@@ -456,7 +502,8 @@ export default function Dashboard() {
       {/* 2. Broadcast Hero (article + featured games inside one box) + Latest News */}
       <div className="grid gap-5 lg:grid-cols-[1fr_320px] items-stretch">
         <div className="flex flex-col">
-          <div className="relative overflow-hidden rounded-xl flex flex-col">
+          {/* Outer wrapper: no border, gradient fade on edges into page bg */}
+          <div className="relative flex-1 flex flex-col overflow-hidden rounded-xl">
             {/* Background: article hero image or dark gradient */}
             {articles.length > 0 ? (
               <ArticleHeroImage
@@ -468,8 +515,19 @@ export default function Dashboard() {
               <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a1a] to-[#1a1a2e]" />
             )}
 
+            {/* Gradient fade edges — top fades to transparent, right fades into page bg, bottom darkens for text */}
+            <div className="absolute inset-0 z-[1] pointer-events-none"
+              style={{
+                background: `
+                  linear-gradient(to bottom, transparent 0%, transparent 30%, rgba(0,0,0,0.7) 70%, rgba(0,0,0,0.9) 100%),
+                  linear-gradient(to right, transparent 50%, var(--bg-primary) 100%),
+                  linear-gradient(to top, transparent 60%, rgba(0,0,0,0.3) 100%)
+                `,
+              }}
+            />
+
             {/* Article headline overlay */}
-            <Link to={articles.length > 0 ? `/article/${articles[0].id}` : '/league-hub'} className="relative z-10 flex-1 min-h-[260px] flex flex-col justify-end p-6 sm:p-8">
+            <Link to={articles.length > 0 ? `/article/${articles[0].id}` : '/league-hub'} className="relative z-10 flex-1 flex flex-col justify-end p-6 sm:p-8">
               {articles.length > 0 ? (
                 <>
                   <span

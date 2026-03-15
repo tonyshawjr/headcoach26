@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { weekLabelShort as weekLabelFn } from '@/lib/weekLabel';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -111,18 +112,20 @@ function useNavLabels() {
   let simDisabled = false;
   let simTooltip = '';
 
+  const wkLabel = weekLabelFn(week, phase);
+
   if (phase === 'preseason' || week === 0) {
     simLabel = 'Start Season First';
     simDisabled = true;
     simTooltip = 'Click "Start Season" to begin';
   } else if (weekSimmed) {
-    simLabel = `Week ${week} Done`;
+    simLabel = `${wkLabel} Done`;
     simDisabled = true;
-    simTooltip = `All games for Week ${week} are complete.`;
+    simTooltip = `All games for ${wkLabel} are complete.`;
   } else if (hasUnsimmed) {
-    simLabel = `Sim Week ${week}`;
+    simLabel = `Sim ${wkLabel}`;
     simDisabled = false;
-    simTooltip = `Simulate all games for Week ${week}`;
+    simTooltip = `Simulate all games for ${wkLabel}`;
   } else {
     simLabel = 'No Games';
     simDisabled = true;
@@ -136,11 +139,12 @@ function useNavLabels() {
     advLabel = 'Start Season';
     advTooltip = 'Begin the regular season';
   } else if (phase === 'regular') {
-    advLabel = week >= 18 ? 'Start Playoffs' : `Week ${week + 1}`;
-    advTooltip = week >= 18 ? 'Advance to the playoffs' : `Go to Week ${week + 1}`;
+    advLabel = week >= 18 ? 'Start Playoffs' : weekLabelFn(week + 1);
+    advTooltip = week >= 18 ? 'Advance to the playoffs' : `Go to ${weekLabelFn(week + 1)}`;
   } else if (phase === 'playoffs') {
-    advLabel = week >= 22 ? 'Enter Offseason' : 'Next Round';
-    advTooltip = week >= 22 ? 'Enter the offseason' : 'Advance to the next playoff round';
+    const nextLabel = weekLabelFn(week + 1, week >= 22 ? 'offseason' : 'playoffs');
+    advLabel = week >= 22 ? 'Enter Offseason' : nextLabel;
+    advTooltip = week >= 22 ? 'Enter the offseason' : `Advance to ${nextLabel}`;
   } else if (phase === 'offseason') {
     advLabel = 'New Season';
     advTooltip = 'Start a new season';
@@ -220,7 +224,7 @@ export function TopNav() {
   const handleSim = async () => {
     try {
       const result = await sim.mutateAsync();
-      toast.success(`Week ${result.week} simulated — ${result.results.length} games completed`);
+      toast.success(`${weekLabelFn(result.week, result.phase)} simulated — ${result.results.length} games completed`);
       setJustSimmed(true); // Force button to show Advance immediately
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Simulation failed');
@@ -236,7 +240,7 @@ export function TopNav() {
           ? 'Season complete — entering the Offseason'
           : result.phase === 'preseason'
             ? 'Welcome to the new season!'
-            : `Advanced to Week ${result.week}`;
+            : `Advanced to ${weekLabelFn(result.week, result.phase)}`;
       toast.success(msg);
       setJustSimmed(false);
     } catch (e: unknown) {
@@ -425,7 +429,7 @@ export function TopNav() {
             if (weekSimmed || justSimmed) {
               return (
                 <button onClick={handleAdvance} disabled={advance.isPending} className={btnClass}>
-                  {advance.isPending ? 'Advancing...' : `Advance to Week ${week + 1}`}
+                  {advance.isPending ? 'Advancing...' : `Advance to ${weekLabelFn(week + 1, week >= 18 ? 'playoffs' : 'regular')}`}
                 </button>
               );
             }
@@ -622,7 +626,7 @@ export function TopNav() {
                     return <button onClick={handleAdvance} disabled={advance.isPending} className={cls}>{advance.isPending ? 'Starting...' : 'New Season'}</button>;
                   }
                   if (weekSimmed || justSimmed) {
-                    return <button onClick={handleAdvance} disabled={advance.isPending} className={cls}>{advance.isPending ? 'Advancing...' : `Advance to Week ${week + 1}`}</button>;
+                    return <button onClick={handleAdvance} disabled={advance.isPending} className={cls}>{advance.isPending ? 'Advancing...' : `Advance to ${weekLabelFn(week + 1, week >= 18 ? 'playoffs' : 'regular')}`}</button>;
                   }
                   if (!simDisabled) {
                     return <button onClick={handleSim} disabled={sim.isPending} className={cls}>{sim.isPending ? 'Simming...' : `Sim Week ${week}`}</button>;
